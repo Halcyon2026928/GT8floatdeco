@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">自由小窗OS</string>
+    <string name="module_desc">隐藏自由小窗底部白条与顶部三点菜单栏的独立模块，可独立开关，重启后保持设置</string>
+</resources>
+
