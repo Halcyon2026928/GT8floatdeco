@@ -8,9 +8,14 @@ import android.graphics.Region;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.os.Handler;
 import android.widget.ImageView;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -29,12 +34,21 @@ final class DecoHook {
     static final String KEY_HIDE_BOTTOM_BAR = "hide_bottom_bar";
     static final String KEY_HIDE_THREE_DOT = "hide_three_dot_menu";
     static final String KEY_FIRST_DRAG_DOCK = "first_drag_to_dock";
+    /** 后台运行时长，单位小时：0=不限，1=官方默认，2/4/8/12 为延长。 */
+    static final String KEY_LIVELY_HOURS = "lively_run_hours";
+    /** 是否解除官方「最多 2 个应用后台运行」，开启时放到 {@link #LIVELY_COUNT_LIMIT}。 */
+    static final String KEY_LIVELY_UNLOCK_COUNT = "lively_unlock_count";
+
+    /** 官方「最多 2 个应用后台运行」是硬编码，这里放到 12（与自由浮窗总数上限一致）。 */
+    private static final int LIVELY_COUNT_LIMIT = 12;
 
     private static final boolean DUMP_CAPTION_TREE = false;
 
     private static volatile boolean hideBottomBar = true;
     private static volatile boolean hideThreeDot = true;
     private static volatile boolean firstDragToDock = true;
+    private static volatile int livelyHours = 1;
+    private static volatile boolean livelyUnlockCount = true;
     private static volatile boolean configLoaded;
     private static volatile boolean sStoreBootstrapped;
 
@@ -79,6 +93,15 @@ final class DecoHook {
 
         // 第四层：拖动收起时第一次也直接进坞窗（官方默认第一次走最小化）
         hookFirstDragToDock(cl);
+
+        // 第五层：官方「后台运行 1 小时」改成可选的时长
+        hookLivelyTimeout(cl);
+
+        // 第六层：官方「最多 2 个应用后台运行」放到 12 个
+        hookLivelyCount(cl);
+
+        // 第七层：新窗口进坞窗时那处 livelySize == 2 的降级
+        hookJoinLivelyGuard(cl);
     }
 
     /**
@@ -111,9 +134,309 @@ final class DecoHook {
         }
     }
 
+    // ==================== 后台运行：时长 ====================
+
+    /**
+     * 官方「后台运行 1 小时」的判点在
+     * {@code LivelyFloatHandleViewManager$TimeOutPolicy} 里的那个无参 lambda
+     * （{@code lambda$new$0}，原 {@code checkTimeout}）：遍历 {@code mRunningInfos}，
+     * {@code now - mStartTime >= SystemProperties.getLong("debug.livelytimeout", 3600000L)}
+     * 就 {@code exitLively(taskId)}。
+     *
+     * <p>这里不改方法体，而是接管这一次判定：用同一张表、同一个 Handler、同一个
+     * {@code mCheckTimeout} Runnable，按用户选的时长重新算，算完把原方法整段跳过。
+     * 当选「1 小时（官方默认）」时完全不碰，走官方原逻辑。</p>
+     */
+    private void hookLivelyTimeout(ClassLoader cl) {
+        try {
+            Class<?> policyClass = XposedHelpers.findClass(
+                    "com.android.server.wm.floathandle.LivelyFloatHandleViewManager$TimeOutPolicy", cl);
+            Method check = findTimeoutCheck(policyClass);
+            if (check == null) {
+                XposedBridge.log(TAG + " lively timeout: check method not found");
+                return;
+            }
+            XposedBridge.hookMethod(check, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    if (livelyHours == 1) return;
+                    try {
+                        if (recalcLivelyTimeout(param.thisObject)) {
+                            param.setResult(null);
+                        }
+                    } catch (Throwable t) {
+                        XposedBridge.log(TAG + " lively timeout hook error: " + t.getMessage());
+                    }
+                }
+            });
+            XposedBridge.log(TAG + " LivelyFloatHandleViewManager.TimeOutPolicy hook success: "
+                    + check.getName() + " hours=" + livelyHours);
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + " hook lively timeout failed: " + t.getMessage());
+        }
+    }
+
+    /** TimeOutPolicy 里那个无参 void 的超时判定方法（真名 lambda$new$0，备用名判定避开 refresh）。 */
+    private static Method findTimeoutCheck(Class<?> policyClass) {
+        Method fallback = null;
+        for (Method m : policyClass.getDeclaredMethods()) {
+            if (m.getParameterCount() != 0 || m.getReturnType() != void.class) continue;
+            if (m.getName().startsWith("lambda$new")) {
+                m.setAccessible(true);
+                return m;
+            }
+            if (!"refresh".equals(m.getName()) && fallback == null) fallback = m;
+        }
+        if (fallback != null) fallback.setAccessible(true);
+        return fallback;
+    }
+
+    /**
+     * 按用户选的时长重算一遍。返回 true 表示已经处理完、让原方法跳过。
+     *
+     * <p>时长 0 = 不限：把在跑的检查撤掉，永不退出（不额外排期，不引入任何自建定时）。</p>
+     */
+    private boolean recalcLivelyTimeout(Object policy) {
+        Object manager = XposedHelpers.getObjectField(policy, "this$0");
+        Object mapObj = XposedHelpers.getObjectField(policy, "mRunningInfos");
+        if (manager == null || !(mapObj instanceof Map)) return false;
+        Map<?, ?> running = (Map<?, ?>) mapObj;
+
+        Handler handler = (Handler) XposedHelpers.getObjectField(manager, "mHandler");
+        Runnable check = (Runnable) XposedHelpers.getObjectField(policy, "mCheckTimeout");
+        if (handler == null || check == null) return false;
+
+        long cfgMs = livelyHours <= 0 ? 0 : livelyHours * 3600000L;
+        long now = System.currentTimeMillis();
+        long delay = -1;
+        boolean fieldOk = true;
+
+        Iterator<? extends Map.Entry<?, ?>> it = running.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<?, ?> entry = it.next();
+            Object info = entry.getValue();
+            if (info == null) continue;
+            long start = startTimeOf(info);
+            if (start < 0) {
+                fieldOk = false;
+                break;
+            }
+            long elapsed = now - start;
+            if (cfgMs > 0 && elapsed >= cfgMs) {
+                it.remove();
+                int taskId = taskIdOf(info);
+                XposedBridge.log(TAG + " lively run timeout(" + livelyHours + "h) exit taskId=" + taskId);
+                exitLively(manager, taskId);
+                continue;
+            }
+            if (cfgMs > 0) {
+                long wait = cfgMs - elapsed;
+                if (delay < 0 || wait < delay) delay = wait;
+            }
+        }
+        if (!fieldOk) return false;
+
+        handler.removeCallbacks(check);
+        if (cfgMs > 0 && delay > 0) {
+            handler.postDelayed(check, delay);
+        }
+        return true;
+    }
+
+    private static void exitLively(Object manager, int taskId) {
+        try {
+            Class<?> controllerClass = XposedHelpers.findClass(
+                    "com.android.server.wm.FloatHandleController", manager.getClass().getClassLoader());
+            Object controller = XposedHelpers.callStaticMethod(controllerClass, "getInstance");
+            if (controller != null) {
+                XposedHelpers.callMethod(controller, "exitLively", taskId);
+            }
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + " exitLively failed: " + t.getMessage());
+        }
+    }
+
+    private static volatile Field sStartTimeField;
+    private static volatile boolean sStartTimeFieldResolved;
+
+    /** FloatTimeInfo 里的开始时间（long）。读不到返回 -1，上层就交回官方逻辑。 */
+    private static long startTimeOf(Object info) {
+        Field field = sStartTimeField;
+        if (!sStartTimeFieldResolved) {
+            Class<?> clazz = info.getClass();
+            try {
+                field = XposedHelpers.findField(clazz, "mStartTime");
+            } catch (Throwable ignored) {
+                field = null;
+            }
+            if (field == null) {
+                for (Field candidate : clazz.getDeclaredFields()) {
+                    if (candidate.getType() == long.class) {
+                        field = candidate;
+                        break;
+                    }
+                }
+            }
+            if (field != null) {
+                try {
+                    field.setAccessible(true);
+                } catch (Throwable ignored) {
+                }
+            }
+            sStartTimeField = field;
+            sStartTimeFieldResolved = true;
+        }
+        if (field == null) return -1;
+        try {
+            return field.getLong(info);
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    private static int taskIdOf(Object info) {
+        try {
+            return XposedHelpers.getIntField(info, "mTaskId");
+        } catch (Throwable ignored) {
+            try {
+                return XposedHelpers.getIntField(info, "taskId");
+            } catch (Throwable ignored2) {
+                return -1;
+            }
+        }
+    }
+
+    // ==================== 后台运行：数量 ====================
+
+    /**
+     * 官方「最多支持 2 个应用后台运行」落在
+     * {@code FloatHandleController.checkLivelySizeMaybeChangeToStatic(boolean)}：
+     * {@code if (getLivelySize() == 2)} 就把列表里第二个降级成静态。
+     *
+     * <p>这里把阈值挪到 {@link #LIVELY_COUNT_LIMIT}：12 个以内一律跳过官方这段，
+     * 到 12 个时由我们按同样的方式降级一个，其余行为（列表顺序、静态数清理）都不变。</p>
+     */
+    private void hookLivelyCount(ClassLoader cl) {
+        try {
+            Class<?> controllerClass = XposedHelpers.findClass(
+                    "com.android.server.wm.FloatHandleController", cl);
+            XposedHelpers.findAndHookMethod(controllerClass, "checkLivelySizeMaybeChangeToStatic",
+                    boolean.class, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            if (!livelyUnlockCount) return;
+                            try {
+                                Object controller = param.thisObject;
+                                int size = (Integer) XposedHelpers.callMethod(controller, "getLivelySize");
+                                if (size < LIVELY_COUNT_LIMIT) {
+                                    // 官方只会对 size == 2 动手，12 以内直接不让它介入
+                                    param.setResult(null);
+                                    return;
+                                }
+                                Object listObj = XposedHelpers.getObjectField(
+                                        controller, "mFloatHandleInfoList");
+                                if (!(listObj instanceof List)) return;
+                                List<?> list = (List<?>) listObj;
+                                if (list.size() < 2) return;
+                                Object victim = list.get(1);
+                                boolean pendingAdd = (Boolean) param.args[0];
+                                XposedHelpers.callMethod(controller, "changeToStatic", victim, pendingAdd);
+                                param.setResult(null);
+                                XposedBridge.log(TAG + " lively count limit " + LIVELY_COUNT_LIMIT
+                                        + " reached, demote taskId=" + taskIdOf(victim));
+                            } catch (Throwable t) {
+                                XposedBridge.log(TAG + " lively count hook error: " + t.getMessage());
+                            }
+                        }
+                    });
+            XposedBridge.log(TAG + " FloatHandleController.lively count limit -> "
+                    + LIVELY_COUNT_LIMIT);
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + " hook lively count failed: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 新窗口进坞窗时官方还有第二处硬编码，光改上面那个方法不够：
+     * {@code FloatHandleController.updateInfoMapForAdd()} 里
+     * {@code if (livelySize == 2) changeToStatic(mFloatHandleInfoList.get(livelySize - 1), true)}，
+     * 也就是后台运行已有 2 个时，新来的那个会把前一个踢成静态。
+     *
+     * <p>这里按调用来源把这次降级拦掉（只有从 updateInfoMapForAdd 调进来的改动），
+     * 12 个满员时反过来把新窗口本身按静态加入，保证总数不超。</p>
+     */
+    private void hookJoinLivelyGuard(ClassLoader cl) {
+        try {
+            Class<?> controllerClass = XposedHelpers.findClass(
+                    "com.android.server.wm.FloatHandleController", cl);
+
+            // 参数类型是 com.android.server.wm.floathandle.FloatHandleInfo，直接按类名取容易
+            // 因包名变化失败，这里按方法名 + 参数个数从控制器里捞，不依赖外部类名。
+            for (Method method : controllerClass.getDeclaredMethods()) {
+                if (!"updateInfoMapForAdd".equals(method.getName())) continue;
+                if (method.getParameterCount() != 1) continue;
+                method.setAccessible(true);
+                XposedBridge.hookMethod(method, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        if (!livelyUnlockCount) return;
+                        try {
+                            Object info = param.args[0];
+                            if (info == null) return;
+                            if (XposedHelpers.getIntField(info, "type") != 1) return;
+                            int lively = (Integer) XposedHelpers.callMethod(
+                                    param.thisObject, "getLivelySize");
+                            if (lively < LIVELY_COUNT_LIMIT) return;
+                            XposedHelpers.setIntField(info, "type", 0);
+                            XposedBridge.log(TAG + " lively full(" + LIVELY_COUNT_LIMIT
+                                    + "), add new window as static taskId=" + taskIdOf(info));
+                        } catch (Throwable t) {
+                            XposedBridge.log(TAG + " updateInfoMapForAdd guard error: " + t.getMessage());
+                        }
+                    }
+                });
+            }
+
+            for (Method method : controllerClass.getDeclaredMethods()) {
+                if (!"changeToStatic".equals(method.getName())) continue;
+                if (method.getReturnType() != int.class || method.getParameterCount() != 2) continue;
+                method.setAccessible(true);
+                XposedBridge.hookMethod(method, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        if (!livelyUnlockCount) return;
+                        try {
+                            if (!calledFrom("updateInfoMapForAdd")) return;
+                            Object controller = param.thisObject;
+                            int lively = (Integer) XposedHelpers.callMethod(controller, "getLivelySize");
+                            if (lively >= LIVELY_COUNT_LIMIT) return;
+                            param.setResult(0);
+                            XposedBridge.log(TAG + " skip updateInfoMap lively demote, lively=" + lively);
+                        } catch (Throwable t) {
+                            XposedBridge.log(TAG + " changeToStatic guard error: " + t.getMessage());
+                        }
+                    }
+                });
+            }
+            XposedBridge.log(TAG + " updateInfoMapForAdd lively demote guard installed");
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + " hook updateInfoMap guard failed: " + t.getMessage());
+        }
+    }
+
+    /** 当前调用栈里是否出现过指定方法名（用来区分 changeToStatic 的调用来源）。 */
+    private static boolean calledFrom(String... methodNames) {
+        for (StackTraceElement e : Thread.currentThread().getStackTrace()) {
+            String name = e.getMethodName();
+            for (String target : methodNames) {
+                if (target.equals(name)) return true;
+            }
+        }
+        return false;
+    }
+
     /** 每次自由小窗创建时按当前开关改视图树。 */
-    private void applyCaptionDecor(Object captionView) {
-        loadConfig(captionView);
+    private void applyCaptionDecor(Object captionView) {        loadConfig(captionView);
 
         // ---- 隐藏底部手势小横条（开关：hide_bottom_bar） ----
         if (hideBottomBar) {
@@ -170,12 +493,17 @@ final class DecoHook {
                             hideThreeDot = value == 1;
                         } else if (KEY_FIRST_DRAG_DOCK.equals(key)) {
                             firstDragToDock = value == 1;
+                        } else if (KEY_LIVELY_HOURS.equals(key)) {
+                            livelyHours = clampHours(value);
+                        } else if (KEY_LIVELY_UNLOCK_COUNT.equals(key)) {
+                            livelyUnlockCount = value == 1;
                         }
                     }
                     configLoaded = true;
                     bootstrapStoreOnce();
                     XposedBridge.log(TAG + " config(provider) -> hideBottomBar=" + hideBottomBar
-                            + " hideThreeDot=" + hideThreeDot);
+                            + " hideThreeDot=" + hideThreeDot + " livelyHours=" + livelyHours
+                            + " livelyUnlockCount=" + livelyUnlockCount);
                 } finally {
                     c.close();
                 }
@@ -198,10 +526,13 @@ final class DecoHook {
             hideBottomBar = prefs.getBoolean(KEY_HIDE_BOTTOM_BAR, true);
             hideThreeDot = prefs.getBoolean(KEY_HIDE_THREE_DOT, true);
             firstDragToDock = prefs.getBoolean(KEY_FIRST_DRAG_DOCK, true);
+            livelyHours = clampHours(prefs.getInt(KEY_LIVELY_HOURS, 1));
+            livelyUnlockCount = prefs.getBoolean(KEY_LIVELY_UNLOCK_COUNT, true);
             configLoaded = true;
             bootstrapStoreOnce();
             XposedBridge.log(TAG + " config(xprefs) -> hideBottomBar=" + hideBottomBar
-                    + " hideThreeDot=" + hideThreeDot + " firstDragToDock=" + firstDragToDock);
+                    + " hideThreeDot=" + hideThreeDot + " firstDragToDock=" + firstDragToDock
+                    + " livelyHours=" + livelyHours + " livelyUnlockCount=" + livelyUnlockCount);
         } catch (Throwable t) {
             XposedBridge.log(TAG + " XSharedPreferences error: " + t.getMessage());
         }
@@ -213,9 +544,12 @@ final class DecoHook {
         hideBottomBar = boolOf(map, KEY_HIDE_BOTTOM_BAR, hideBottomBar);
         hideThreeDot = boolOf(map, KEY_HIDE_THREE_DOT, hideThreeDot);
         firstDragToDock = boolOf(map, KEY_FIRST_DRAG_DOCK, firstDragToDock);
+        livelyHours = clampHours(intOf(map, KEY_LIVELY_HOURS, livelyHours));
+        livelyUnlockCount = boolOf(map, KEY_LIVELY_UNLOCK_COUNT, livelyUnlockCount);
         configLoaded = true;
         XposedBridge.log(TAG + " config(store) -> hideBottomBar=" + hideBottomBar
-                + " hideThreeDot=" + hideThreeDot + " firstDragToDock=" + firstDragToDock);
+                + " hideThreeDot=" + hideThreeDot + " firstDragToDock=" + firstDragToDock
+                + " livelyHours=" + livelyHours + " livelyUnlockCount=" + livelyUnlockCount);
     }
 
     Map<String, String> configToMap() {
@@ -223,6 +557,8 @@ final class DecoHook {
         map.put(KEY_HIDE_BOTTOM_BAR, String.valueOf(hideBottomBar));
         map.put(KEY_HIDE_THREE_DOT, String.valueOf(hideThreeDot));
         map.put(KEY_FIRST_DRAG_DOCK, String.valueOf(firstDragToDock));
+        map.put(KEY_LIVELY_HOURS, String.valueOf(livelyHours));
+        map.put(KEY_LIVELY_UNLOCK_COUNT, String.valueOf(livelyUnlockCount));
         return map;
     }
 
@@ -241,6 +577,24 @@ final class DecoHook {
         String value = map.get(key);
         if (value == null) return def;
         return "true".equalsIgnoreCase(value) || "1".equals(value);
+    }
+
+    private static int intOf(Map<String, String> map, String key, int def) {
+        String value = map.get(key);
+        if (value == null) return def;
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (Throwable ignored) {
+            return def;
+        }
+    }
+
+    /** 只认 0（不限）、1（官方默认）、2/4/8/12，别的值当默认 1 小时。 */
+    private static int clampHours(int hours) {
+        if (hours == 0 || hours == 1 || hours == 2 || hours == 4 || hours == 8 || hours == 12) {
+            return hours;
+        }
+        return 1;
     }
 
     // ==================== 三点按钮：视图移除 ====================

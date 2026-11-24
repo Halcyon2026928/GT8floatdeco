@@ -33,6 +33,10 @@ public class ConfigProvider extends ContentProvider {
                 prefs.getBoolean(SettingsActivity.KEY_HIDE_THREE_DOT, true) ? 1 : 0});
         c.addRow(new Object[]{SettingsActivity.KEY_FIRST_DRAG_DOCK,
                 prefs.getBoolean(SettingsActivity.KEY_FIRST_DRAG_DOCK, true) ? 1 : 0});
+        c.addRow(new Object[]{SettingsActivity.KEY_LIVELY_HOURS,
+                prefs.getInt(SettingsActivity.KEY_LIVELY_HOURS, 1)});
+        c.addRow(new Object[]{SettingsActivity.KEY_LIVELY_UNLOCK_COUNT,
+                prefs.getBoolean(SettingsActivity.KEY_LIVELY_UNLOCK_COUNT, true) ? 1 : 0});
         // 被查询即顺手推一份落盘：system_server 里那份文件是开机恢复的唯一来源，
         // 这样即便用户改完设置就直接关掉 app，下次开机也能拿到最新的值。
         SettingsActivity.pushSettings(getContext());
