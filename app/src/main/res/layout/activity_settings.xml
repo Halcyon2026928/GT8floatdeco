@@ -17,7 +17,7 @@
         android:paddingTop="6dp"
         android:paddingRight="14dp"
         android:paddingBottom="6dp"
-        android:text="自由小窗OS · 独立模块"
+        android:text="@string/settings_pill"
         android:textColor="@color/text_primary"
         android:textSize="11sp" />
 
@@ -34,7 +34,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:letterSpacing="0.02"
-            android:text="自由小窗OS"
+            android:text="@string/settings_title"
             android:textColor="?attr/fwTextPrimary"
             android:textSize="26sp"
             android:textStyle="bold" />
@@ -65,7 +65,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:text="选择要调整的分组"
+        android:text="@string/settings_subtitle"
         android:textColor="?attr/fwTextSecondary"
         android:textSize="13sp" />
 
@@ -102,7 +102,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:letterSpacing="0.02"
-                    android:text="自由小窗"
+                    android:text="@string/group_free_window"
                     android:textColor="?attr/fwTextPrimary"
                     android:textSize="16sp"
                     android:textStyle="bold" />
@@ -143,7 +143,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="隐藏窗口白条"
+                            android:text="@string/item_hide_bottom_bar"
                             android:textColor="?attr/fwTextPrimary"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -176,7 +176,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="隐藏三点菜单栏"
+                            android:text="@string/item_hide_three_dot"
                             android:textColor="?attr/fwTextPrimary"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -209,7 +209,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="首次拖动直达坞窗"
+                            android:text="@string/item_first_drag_dock"
                             android:textColor="?attr/fwTextPrimary"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -243,7 +243,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:letterSpacing="0.02"
-                    android:text="灵动窗口"
+                    android:text="@string/group_lively"
                     android:textColor="?attr/fwTextPrimary"
                     android:textSize="16sp"
                     android:textStyle="bold" />
@@ -284,7 +284,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="解除数量限制"
+                            android:text="@string/item_unlock_count"
                             android:textColor="?attr/fwTextPrimary"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -293,38 +293,6 @@
 
                     <Switch
                         android:id="@+id/switch_lively_count"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="16dp" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp"
-                    android:background="?attr/fwCardBackground"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="14dp">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="后台卡片封面铺满"
-                            android:textColor="?attr/fwTextPrimary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
-
-                    </LinearLayout>
-
-                    <Switch
-                        android:id="@+id/switch_card_cover"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="16dp" />
@@ -348,7 +316,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="后台运行时长"
+                            android:text="@string/item_lively_hours"
                             android:textColor="?attr/fwTextPrimary"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -358,7 +326,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="12dp"
-                            android:text="1 小时"
+                            android:text="@string/lively_hours_1"
                             android:textColor="@color/accent_1"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -373,6 +341,136 @@
                         android:max="5" />
 
                 </LinearLayout>
+            </LinearLayout>
+
+            <!-- ========== 分组 3：任务卡片 ========== -->
+            <LinearLayout
+                android:id="@+id/header_task_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="9dp"
+                android:background="?attr/fwCardBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:letterSpacing="0.02"
+                    android:text="@string/group_task_card"
+                    android:textColor="?attr/fwTextPrimary"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/arrow_task_card"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:text="›"
+                    android:textColor="?attr/fwTextSecondary"
+                    android:textSize="30sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/items_task_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="9dp"
+                    android:background="?attr/fwCardBackground"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/item_cover_full"
+                            android:textColor="?attr/fwTextPrimary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/item_cover_full_desc"
+                            android:textColor="?attr/fwTextSecondary"
+                            android:textSize="11sp" />
+
+                    </LinearLayout>
+
+                    <Switch
+                        android:id="@+id/switch_card_cover"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp" />
+                </LinearLayout>
+
+                <!-- 应用自定义：给单个应用指定卡片图片；显示方式选择器也在那个页面里 -->
+                <LinearLayout
+                    android:id="@+id/row_app_customize"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="9dp"
+                    android:background="?attr/fwCardBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/item_app_customize"
+                            android:textColor="?attr/fwTextPrimary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tv_app_customize_count"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/item_app_customize_desc"
+                            android:textColor="?attr/fwTextSecondary"
+                            android:textSize="11sp" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:text="›"
+                        android:textColor="?attr/fwTextSecondary"
+                        android:textSize="24sp" />
+                </LinearLayout>
+
             </LinearLayout>
 
         </LinearLayout>

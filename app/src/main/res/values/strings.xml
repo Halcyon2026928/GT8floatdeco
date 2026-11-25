@@ -2,5 +2,66 @@
 <resources>
     <string name="app_name">自由小窗OS</string>
     <string name="module_desc">隐藏自由小窗底部白条与顶部三点菜单栏的独立模块，可独立开关，重启后保持设置</string>
-</resources>
 
+    <!-- ==================== 设置页 ==================== -->
+    <string name="settings_pill">自由小窗OS · 独立模块</string>
+    <string name="settings_title">自由小窗OS</string>
+    <string name="settings_subtitle">选择要调整的分组</string>
+
+    <string name="group_free_window">自由小窗</string>
+    <string name="item_hide_bottom_bar">隐藏窗口白条</string>
+    <string name="item_hide_three_dot">隐藏三点菜单栏</string>
+    <string name="item_first_drag_dock">首次拖动直达坞窗</string>
+
+    <string name="group_lively">灵动窗口</string>
+    <string name="item_unlock_count">解除数量限制</string>
+    <string name="item_lively_hours">后台运行时长</string>
+
+    <string name="group_task_card">任务卡片</string>
+    <string name="item_cover_full">封面铺满</string>
+    <string name="item_cover_full_desc">自由小窗快照在卡片里按裁剪铺满，消除上下黑边</string>
+    <string name="item_app_customize">应用自定义</string>
+    <string name="item_app_customize_desc">为单个应用指定卡片图片</string>
+
+    <string name="app_customize_count">已自定义 %1$d 个应用</string>
+    <string name="lively_unlimited">不限</string>
+    <string name="lively_hours">%1$d 小时</string>
+    <string name="lively_hours_1">1 小时</string>
+
+    <!-- ==================== 应用自定义页 ==================== -->
+    <string name="ac_title">应用自定义</string>
+    <string name="ac_subtitle">选一个应用，为它指定上滑关闭后最近任务卡片显示的图片</string>
+    <string name="ac_display_label">未自定义的应用显示</string>
+    <string name="ac_display_desc">已单独设图的应用始终显示自己的图；选「官方」则全部恢复系统原样，图片保留</string>
+    <string name="mode_cover">裁剪页</string>
+    <string name="mode_official">官方</string>
+    <string name="mode_splash">启动页</string>
+
+    <string name="ac_search_hint">搜索应用名或包名</string>
+    <string name="ac_filter_all">全部应用</string>
+    <string name="ac_filter_custom">已自定义</string>
+    <string name="ac_loading">正在读取应用列表…</string>
+    <string name="ac_empty_custom">还没有自定义过任何应用</string>
+    <string name="ac_empty_user">没有匹配的用户应用\n右上角 ⋮ 可打开「显示系统应用」</string>
+    <string name="ac_empty_any">没有匹配的应用</string>
+
+    <string name="ac_no_picker">没有可用的图片选择器</string>
+    <string name="ac_saving">正在保存…</string>
+    <string name="ac_saved">已设置，回到桌面即生效</string>
+    <string name="ac_save_failed">保存失败，换张图再试</string>
+    <string name="ac_cleared">已清除</string>
+
+    <string name="ac_system_tag"> · 系统应用</string>
+    <string name="ac_customized">已自定义</string>
+    <string name="ac_clear">清除</string>
+    <string name="ac_pick">选图</string>
+
+    <string name="ac_show_system">显示系统应用</string>
+    <string name="ac_sort">排序</string>
+    <string name="sort_by_name">按名称</string>
+    <string name="sort_by_time">按安装时间</string>
+    <string name="sort_by_pkg">按包名</string>
+    <string name="sort_value_name">名称</string>
+    <string name="sort_value_time">安装时间</string>
+    <string name="sort_value_pkg">包名</string>
+</resources>

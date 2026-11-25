@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 排序二级菜单：三选一，选中项用主题强调色标出来。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/fwCardBackground"
+    android:orientation="vertical"
+    android:paddingStart="6dp"
+    android:paddingTop="6dp"
+    android:paddingEnd="6dp"
+    android:paddingBottom="6dp">
+
+    <TextView
+        android:id="@+id/sort_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingStart="12dp"
+        android:paddingTop="11dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="11dp"
+        android:text="@string/sort_by_name"
+        android:textColor="?attr/fwTextPrimary"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/sort_time"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingStart="12dp"
+        android:paddingTop="11dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="11dp"
+        android:text="@string/sort_by_time"
+        android:textColor="?attr/fwTextPrimary"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/sort_pkg"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingStart="12dp"
+        android:paddingTop="11dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="11dp"
+        android:text="@string/sort_by_pkg"
+        android:textColor="?attr/fwTextPrimary"
+        android:textSize="14sp" />
+
+</LinearLayout>

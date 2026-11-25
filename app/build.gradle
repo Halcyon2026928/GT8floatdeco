@@ -10,8 +10,21 @@ android {
         applicationId "io.github.halcyon2026928.floatdeco"
         minSdk 26
         targetSdk 32
-        versionCode 102
-        versionName "1.0.2"
+        versionCode 103
+        versionName "1.0.3"
+    }
+
+    // 一套代码出两个 APK：中文版 / 英文版。
+    // main/res/values/strings.xml 是中文（默认），src/en 覆盖成英文。
+    // 用 flavor 而不是 values-en，这样英文包不看系统语言，永远是英文。
+    flavorDimensions += "lang"
+    productFlavors {
+        zh {
+            dimension "lang"
+        }
+        en {
+            dimension "lang"
+        }
     }
 
     buildTypes {
@@ -29,7 +42,7 @@ android {
     androidComponents {
         onVariants(selector().all()) { variant ->
             variant.outputs.forEach { output ->
-                output.outputFileName.set("freeformos-${variant.buildType}.apk")
+                output.outputFileName.set("freeformos-${variant.flavorName}-${variant.buildType}.apk")
             }
         }
     }

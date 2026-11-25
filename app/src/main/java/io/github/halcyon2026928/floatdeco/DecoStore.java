@@ -33,6 +33,10 @@ final class DecoStore {
 
     static final String ACTION_PUSH = "io.github.halcyon2026928.floatdeco.SETTINGS_PUSHED";
 
+    /** 开机 AMS 未就绪时注册失败，最多重试 40 次（每次 2s，覆盖约 80s）。 */
+    private static final int MAX_REGISTER_ATTEMPTS = 40;
+    private static final long REGISTER_RETRY_DELAY_MS = 2000L;
+
     private static volatile DecoHook sHook;
     private static volatile Context sContext;
     private static volatile boolean sInstalled;
@@ -171,6 +175,14 @@ final class DecoStore {
     }
 
     private static void registerReceiver() {
+        registerReceiver(0);
+    }
+
+    /**
+     * 注册推送接收器。开机早期 AMS 尚未就绪时 registerReceiver 会抛 NPE
+     * （IActivityManager 为 null），所以失败要延迟重试，否则推送通道永久失效。
+     */
+    private static void registerReceiver(final int attempt) {
         Context ctx = sContext;
         if (ctx == null) {
             log("system context unavailable, push channel disabled");
@@ -182,13 +194,7 @@ final class DecoStore {
                 @Override
                 public void onReceive(Context context, Intent intent) {
                     if (intent == null || !ACTION_PUSH.equals(intent.getAction())) return;
-                    int uid;
-                    try {
-                        // API 30+ 才有发送方 uid；拿不到就当不可信
-                        uid = getSentFromUid();
-                    } catch (Throwable t) {
-                        uid = -1;
-                    }
+                    int uid = sentFromUid(intent);
                     if (!trusted(uid)) {
                         log("rejected foreign push from uid=" + uid);
                         return;
@@ -196,10 +202,41 @@ final class DecoStore {
                     onPushFromApp(intent.getExtras());
                 }
             }, filter, Context.RECEIVER_EXPORTED);
-            log("push channel ready");
+            log("push channel ready (attempt " + attempt + ")");
         } catch (Throwable t) {
-            log("register receiver failed: " + t.getMessage());
+            log("register receiver failed (attempt " + attempt + "): " + t.getMessage());
+            if (attempt < MAX_REGISTER_ATTEMPTS) {
+                scheduleRetry(attempt + 1);
+            }
         }
+    }
+
+    private static void scheduleRetry(final int attempt) {
+        try {
+            android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+            h.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    registerReceiver(attempt);
+                }
+            }, REGISTER_RETRY_DELAY_MS);
+        } catch (Throwable t) {
+            log("schedule retry failed: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 发送方 uid。{@code Intent.getSentFromUid()} 在 compileSdk 34 的 stub 里没有，
+     * 只能反射调；取不到就返回 -1，由 {@link #trusted(int)} 当成不可信丢弃。
+     */
+    private static int sentFromUid(Intent intent) {
+        if (intent == null) return -1;
+        try {
+            Object v = XposedHelpers.callMethod(intent, "getSentFromUid");
+            if (v instanceof Integer) return (Integer) v;
+        } catch (Throwable ignored) {
+        }
+        return -1;
     }
 
     /** 只认模块 app 自己或系统进程：这份配置决定模块行为，不能由第三方写。 */

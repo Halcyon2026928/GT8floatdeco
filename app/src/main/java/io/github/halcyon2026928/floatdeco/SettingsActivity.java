@@ -27,6 +27,8 @@ public class SettingsActivity extends Activity {
     static final String KEY_LIVELY_UNLOCK_COUNT = "lively_unlock_count";
     /** 后台卡片封面铺满：自由小窗快照在最近任务卡片里按 cover 铺满，消除上下黑边。 */
     static final String KEY_CARD_COVER = CardCoverHook.KEY_CARD_COVER;
+    /** 上滑关闭自由小窗后，最近任务卡片显示图标页而非内容快照。 */
+    static final String KEY_ICON_PAGE = DecoHook.KEY_ICON_PAGE;
 
     static final String KEY_THEME_MODE = "theme_mode";
     static final int THEME_FOLLOW_SYSTEM = 0;
@@ -37,6 +39,7 @@ public class SettingsActivity extends Activity {
     private static final String UI_PREFS = "floatdeco_ui";
     private static final String KEY_GROUP_FREEWINDOW_EXPANDED = "group_free_window_expanded";
     private static final String KEY_GROUP_BACKGROUND_EXPANDED = "group_background_expanded";
+    private static final String KEY_GROUP_TASK_CARD_EXPANDED = "group_task_card_expanded";
 
     /** 拖动条档位：1、2、4、8、12 小时，最后一档 0 表示不限。 */
     private static final int[] HOUR_STEPS = {1, 2, 4, 8, 12, 0};
@@ -61,6 +64,8 @@ public class SettingsActivity extends Activity {
         setTheme(light ? R.style.LightTheme : R.style.AppTheme);
         setContentView(R.layout.activity_settings);
         applyStatusBar(light);
+        // 打开即同步一次：把当前开关写成快照并推送，避免用户改完没触发写入。
+        pushSettings(this);
 
         ImageView themeIcon = findViewById(R.id.ivThemeIcon);
         if (themeIcon != null) themeIcon.setImageResource(iconOf(themeMode));
@@ -82,6 +87,13 @@ public class SettingsActivity extends Activity {
                 R.id.arrow_free_window, KEY_GROUP_FREEWINDOW_EXPANDED);
         settleGroup(R.id.header_background, R.id.items_background,
                 R.id.arrow_background, KEY_GROUP_BACKGROUND_EXPANDED);
+        // 任务卡片是新增分组：第一次进设置页默认展开，之后跟随用户的展开/收起。
+        SharedPreferences uiPrefs = getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE);
+        if (!uiPrefs.contains(KEY_GROUP_TASK_CARD_EXPANDED)) {
+            uiPrefs.edit().putBoolean(KEY_GROUP_TASK_CARD_EXPANDED, true).commit();
+        }
+        settleGroup(R.id.header_task_card, R.id.items_task_card,
+                R.id.arrow_task_card, KEY_GROUP_TASK_CARD_EXPANDED);
 
         bottomBarSwitch = findViewById(R.id.switch_bottom_bar);
         threeDotSwitch = findViewById(R.id.switch_three_dot);
@@ -128,6 +140,7 @@ public class SettingsActivity extends Activity {
                 }
             });
         }
+        setupAppCustomize();
 
         if (livelySeek != null) {
             livelySeek.setMax(HOUR_STEPS.length - 1);
@@ -214,6 +227,46 @@ public class SettingsActivity extends Activity {
         return ModulePrefs.get(this).getBoolean(key, def);
     }
 
+    // ==================== 上滑关闭后的卡片显示方式 ====================
+
+    /**
+     * 「应用自定义」入口：点开一个独立页面，给单个应用指定卡片图片。
+     *
+     * <p>显示方式（裁剪页 / 启动页 / 官方）的选择器已经移到那个页面的顶部——
+     * 两处都放一个选择器会互相打架，这里只留入口。</p>
+     */
+    private void setupAppCustomize() {
+        View row = findViewById(R.id.row_app_customize);
+        if (row != null) {
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    try {
+                        startActivity(new Intent(SettingsActivity.this,
+                                AppCustomizeActivity.class));
+                    } catch (Throwable ignored) {
+                    }
+                }
+            });
+        }
+        refreshCustomizeCount();
+    }
+
+    private void refreshCustomizeCount() {
+        TextView tv = findViewById(R.id.tv_app_customize_count);
+        if (tv == null) return;
+        int n = CustomCovers.listLocal(this).size();
+        tv.setText(n <= 0 ? getString(R.string.item_app_customize_desc)
+                : getString(R.string.app_customize_count, n));
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 从「应用自定义」回来时刷新计数。
+        refreshCustomizeCount();
+    }
+
     private void writePref(String key, boolean value) {
         ModulePrefs.get(this).edit().putBoolean(key, value).commit();
         // commit 会重写 xml（权限回到 0600），必须马上放开成 world-readable，
@@ -251,9 +304,23 @@ public class SettingsActivity extends Activity {
         return 0;
     }
 
-    private static String labelOfLively(int hours) {
-        if (hours <= 0) return "不限";
-        return hours + " 小时";
+    private String labelOfLively(int hours) {
+        if (hours <= 0) return getString(R.string.lively_unlimited);
+        return getString(R.string.lively_hours, hours);
+    }
+
+    /**
+     * 读当前显示方式（0 裁剪 / 1 启动页 / 2 官方）。
+     *
+     * <p>兼容旧数据：只有布尔 {@code slide_up_icon_page} 时，true 视为启动页。</p>
+     */
+    static int readDisplayMode(SharedPreferences prefs) {
+        if (prefs.contains(CardCoverHook.KEY_DISPLAY_MODE)) {
+            int m = prefs.getInt(CardCoverHook.KEY_DISPLAY_MODE, CardCoverHook.MODE_COVER);
+            if (m == CardCoverHook.MODE_SPLASH || m == CardCoverHook.MODE_OFFICIAL) return m;
+        }
+        return prefs.getBoolean(KEY_ICON_PAGE, false)
+                ? CardCoverHook.MODE_SPLASH : CardCoverHook.MODE_COVER;
     }
 
     /**
@@ -261,8 +328,11 @@ public class SettingsActivity extends Activity {
      */
     static void pushSettings(Context ctx) {
         if (ctx == null) return;
+        SharedPreferences prefs = ModulePrefs.get(ctx);
+        int displayMode = readDisplayMode(prefs);
+        // 兜底通道：写一份 key=value 到外部私有目录，system_server 直读文件即可拿到最新开关。
+        writeConfigSnapshot(ctx, prefs, displayMode);
         try {
-            SharedPreferences prefs = ModulePrefs.get(ctx);
             Intent intent = new Intent(ACTION_PUSH);
             intent.putExtra(KEY_HIDE_BOTTOM_BAR, prefs.getBoolean(KEY_HIDE_BOTTOM_BAR, true));
             intent.putExtra(KEY_HIDE_THREE_DOT, prefs.getBoolean(KEY_HIDE_THREE_DOT, true));
@@ -270,7 +340,44 @@ public class SettingsActivity extends Activity {
             intent.putExtra(KEY_LIVELY_HOURS, prefs.getInt(KEY_LIVELY_HOURS, 1));
             intent.putExtra(KEY_LIVELY_UNLOCK_COUNT, prefs.getBoolean(KEY_LIVELY_UNLOCK_COUNT, true));
             intent.putExtra(KEY_CARD_COVER, prefs.getBoolean(KEY_CARD_COVER, true));
+            // 旧字段保留（system_server 侧日志与旧逻辑还认它），新字段给 Launcher 侧用。
+            intent.putExtra(KEY_ICON_PAGE, displayMode == CardCoverHook.MODE_SPLASH);
+            intent.putExtra(CardCoverHook.KEY_DISPLAY_MODE, displayMode);
             ctx.sendBroadcast(intent);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 把当前开关写成文本快照，供 system_server 直读（广播/provider 不通时唯一的可靠通道）。 */
+    private static void writeConfigSnapshot(Context ctx, SharedPreferences prefs, int displayMode) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(KEY_HIDE_BOTTOM_BAR).append('=').append(prefs.getBoolean(KEY_HIDE_BOTTOM_BAR, true)).append('\n');
+        sb.append(KEY_HIDE_THREE_DOT).append('=').append(prefs.getBoolean(KEY_HIDE_THREE_DOT, true)).append('\n');
+        sb.append(KEY_FIRST_DRAG_DOCK).append('=').append(prefs.getBoolean(KEY_FIRST_DRAG_DOCK, true)).append('\n');
+        sb.append(KEY_LIVELY_HOURS).append('=').append(prefs.getInt(KEY_LIVELY_HOURS, 1)).append('\n');
+        sb.append(KEY_LIVELY_UNLOCK_COUNT).append('=').append(prefs.getBoolean(KEY_LIVELY_UNLOCK_COUNT, true)).append('\n');
+        sb.append(KEY_CARD_COVER).append('=').append(prefs.getBoolean(KEY_CARD_COVER, true)).append('\n');
+        sb.append(KEY_ICON_PAGE).append('=').append(displayMode == CardCoverHook.MODE_SPLASH).append('\n');
+        sb.append(CardCoverHook.KEY_DISPLAY_MODE).append('=').append(displayMode).append('\n');
+        String content = sb.toString();
+        // 两处都写：外部私有目录（system_server 走 FUSE 可读）与内部 files 目录。
+        writeSnapshotTo(ctx.getExternalFilesDir(null), content);
+        writeSnapshotTo(ctx.getFilesDir(), content);
+    }
+
+    private static void writeSnapshotTo(java.io.File dir, String content) {
+        if (dir == null) return;
+        try {
+            if (!dir.exists() && !dir.mkdirs()) return;
+            java.io.File f = new java.io.File(dir, "floatdeco_config.txt");
+            java.io.FileOutputStream out = new java.io.FileOutputStream(f, false);
+            try {
+                out.write(content.getBytes("UTF-8"));
+                out.flush();
+            } finally {
+                out.close();
+            }
+            f.setReadable(true, false);
         } catch (Throwable ignored) {
         }
     }

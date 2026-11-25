@@ -38,6 +38,8 @@ final class DecoHook {
     static final String KEY_LIVELY_HOURS = "lively_run_hours";
     /** 是否解除官方「最多 2 个应用后台运行」，开启时放到 {@link #LIVELY_COUNT_LIMIT}。 */
     static final String KEY_LIVELY_UNLOCK_COUNT = "lively_unlock_count";
+    /** 上滑关闭自由小窗后，最近任务卡片显示图标页而非内容快照。 */
+    static final String KEY_ICON_PAGE = "slide_up_icon_page";
 
     /** 官方「最多 2 个应用后台运行」是硬编码，这里放到 12（与自由浮窗总数上限一致）。 */
     private static final int LIVELY_COUNT_LIMIT = 12;
@@ -49,12 +51,20 @@ final class DecoHook {
     private static volatile boolean firstDragToDock = true;
     private static volatile int livelyHours = 1;
     private static volatile boolean livelyUnlockCount = true;
+    /** 上滑关闭显示图标页开关；默认关，避免改变未开启用户的行为。 */
+    private static volatile boolean iconPageEnabled = false;
     private static volatile boolean configLoaded;
     private static volatile boolean sStoreBootstrapped;
+    /** 上次刷新配置的时间戳（毫秒），用于节流。 */
+    private static volatile long sLastConfigLoad;
+    /** 缓存的 system_server 上下文与 ClassLoader，供配置直读通道使用。 */
+    private static volatile Context sSysContext;
+    private static volatile ClassLoader sClassLoader;
 
     private static String sRomDisplayId;
 
     void install(ClassLoader cl) {
+        sClassLoader = cl;
         try {
             DecoStore.install(this, cl);
         } catch (Throwable t) {
@@ -105,6 +115,37 @@ final class DecoHook {
 
         // 第八层：兜底掐掉「弹菜单」这个动作本身（notifySystemEvent 1001）
         hookMenuNotifyGuard(cl);
+
+        // 第九层：上滑关闭自由小窗时标记 task，供最近任务卡片显示图标页
+        hookSlideUpIconMark(cl);
+    }
+
+    /** 上滑关闭自由小窗：slideUpAndExitMini 触发时把 taskId 标记为「显示图标页」。 */
+    private void hookSlideUpIconMark(ClassLoader cl) {
+        try {
+            Class<?> cls = XposedHelpers.findClass(
+                    "com.android.server.wm.FlexiblePointerHandler", cl);
+            XposedHelpers.findAndHookMethod(cls, "slideUpAndExitMini",
+                    boolean.class, int.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                // 无条件打标记：system_server 读不到 app 的开关（SELinux 拦 app 私有目录），
+                                // 「是否画图标页」交给 Launcher 侧判断，它读 provider/xprefs 更可靠。
+                                Object task = XposedHelpers.getObjectField(param.thisObject, "mTask");
+                                if (task == null) return;
+                                int taskId = XposedHelpers.getIntField(task, "mTaskId");
+                                IconTaskMarks.mark(taskId);
+                            } catch (Throwable t) {
+                                XposedBridge.log(TAG + " slideUp mark error: " + t.getMessage());
+                            }
+                        }
+                    });
+            XposedBridge.log(TAG + " slideUp icon mark hook success");
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + " slideUp icon mark hook failed: " + t.getMessage());
+        }
     }
 
     /**
@@ -488,32 +529,23 @@ final class DecoHook {
             if (c != null) {
                 try {
                     while (c.moveToNext()) {
-                        String key = c.getString(0);
-                        int value = c.getInt(1);
-                        if (KEY_HIDE_BOTTOM_BAR.equals(key)) {
-                            hideBottomBar = value == 1;
-                        } else if (KEY_HIDE_THREE_DOT.equals(key)) {
-                            hideThreeDot = value == 1;
-                        } else if (KEY_FIRST_DRAG_DOCK.equals(key)) {
-                            firstDragToDock = value == 1;
-                        } else if (KEY_LIVELY_HOURS.equals(key)) {
-                            livelyHours = clampHours(value);
-                        } else if (KEY_LIVELY_UNLOCK_COUNT.equals(key)) {
-                            livelyUnlockCount = value == 1;
-                        }
+                        applyConfigKey(c.getString(0), c.getInt(1));
                     }
                     configLoaded = true;
                     bootstrapStoreOnce();
-                    XposedBridge.log(TAG + " config(provider) -> hideBottomBar=" + hideBottomBar
-                            + " hideThreeDot=" + hideThreeDot + " livelyHours=" + livelyHours
-                            + " livelyUnlockCount=" + livelyUnlockCount);
+                    logConfig("provider");
+                    return;
                 } finally {
                     c.close();
                 }
             }
+            XposedBridge.log(TAG + " config(provider) null cursor, fallback file");
         } catch (Throwable t) {
-            XposedBridge.log(TAG + " loadConfig provider fail, use XSharedPreferences: " + t.getMessage());
+            XposedBridge.log(TAG + " loadConfig provider fail, fallback file: " + t.getMessage());
         }
+        // provider 查不到时直读文件：这是唯一不依赖 AMS/广播的通道。
+        if (loadFromFileChannels()) return;
+        XposedBridge.log(TAG + " config(all channels empty), keep cached iconPage=" + iconPageEnabled);
     }
 
     private void loadFromXSharedPrefs() {
@@ -531,13 +563,216 @@ final class DecoHook {
             firstDragToDock = prefs.getBoolean(KEY_FIRST_DRAG_DOCK, true);
             livelyHours = clampHours(prefs.getInt(KEY_LIVELY_HOURS, 1));
             livelyUnlockCount = prefs.getBoolean(KEY_LIVELY_UNLOCK_COUNT, true);
+            iconPageEnabled = prefs.getBoolean(KEY_ICON_PAGE, false);
             configLoaded = true;
             bootstrapStoreOnce();
             XposedBridge.log(TAG + " config(xprefs) -> hideBottomBar=" + hideBottomBar
                     + " hideThreeDot=" + hideThreeDot + " firstDragToDock=" + firstDragToDock
-                    + " livelyHours=" + livelyHours + " livelyUnlockCount=" + livelyUnlockCount);
+                    + " livelyHours=" + livelyHours + " livelyUnlockCount=" + livelyUnlockCount
+                    + " iconPage=" + iconPageEnabled);
         } catch (Throwable t) {
             XposedBridge.log(TAG + " XSharedPreferences error: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 文件直读通道：XSharedPreferences / provider / 广播都不通时的最后兜底。
+     *
+     * <p>依次尝试：模块 app 的 shared_prefs xml、以及 app 写到外部私有目录的配置文件。
+     * system_server 以 system uid 读这两处一般不受 SELinux 限制（app_data_file 可读、
+     * 外部存储可读）。任何一处命中就更新内存值并落盘。</p>
+     */
+    private boolean loadFromFileChannels() {
+        // 1) shared_prefs xml
+        String[] xmlPaths = {
+                "/data/user/0/" + ModulePrefs.PKG + "/shared_prefs/" + ModulePrefs.NAME + ".xml",
+                "/data/data/" + ModulePrefs.PKG + "/shared_prefs/" + ModulePrefs.NAME + ".xml",
+        };
+        for (String path : xmlPaths) {
+            String xml = readTextFile(path);
+            if (xml == null || xml.isEmpty()) continue;
+            hideBottomBar = xmlBool(xml, KEY_HIDE_BOTTOM_BAR, hideBottomBar);
+            hideThreeDot = xmlBool(xml, KEY_HIDE_THREE_DOT, hideThreeDot);
+            firstDragToDock = xmlBool(xml, KEY_FIRST_DRAG_DOCK, firstDragToDock);
+            livelyUnlockCount = xmlBool(xml, KEY_LIVELY_UNLOCK_COUNT, livelyUnlockCount);
+            iconPageEnabled = xmlBool(xml, KEY_ICON_PAGE, iconPageEnabled);
+            livelyHours = clampHours(xmlInt(xml, KEY_LIVELY_HOURS, livelyHours));
+            configLoaded = true;
+            logConfig("prefsXml");
+            persistConfig();
+            return true;
+        }
+
+        // 2) app 推到私有目录的 key=value 文本（外部目录优先，兼容 FUSE 与直挂载两种路径）
+        String[] kvPaths = {
+                "/storage/emulated/0/Android/data/" + ModulePrefs.PKG + "/files/floatdeco_config.txt",
+                "/data/media/0/Android/data/" + ModulePrefs.PKG + "/files/floatdeco_config.txt",
+                "/data/user/0/" + ModulePrefs.PKG + "/files/floatdeco_config.txt",
+                "/data/data/" + ModulePrefs.PKG + "/files/floatdeco_config.txt",
+        };
+        for (String path : kvPaths) {
+            String text = readTextFile(path);
+            if (text == null || text.isEmpty()) continue;
+            Map<String, String> map = parseKv(text);
+            if (map.isEmpty()) continue;
+            applyConfigFromStore(map);
+            persistConfig();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 使用时强制刷新配置：上滑关闭这类一次性动作不能等被动通道，必须在读开关前拉一次最新值。
+     * 500ms 节流，避免同一次手势里重复 IO。
+     */
+    private void refreshConfigNow() {
+        long now = System.currentTimeMillis();
+        if (now - sLastConfigLoad < 500L) return;
+        sLastConfigLoad = now;
+        try {
+            XSharedPreferences prefs = new XSharedPreferences(ModulePrefs.PKG, ModulePrefs.NAME);
+            prefs.reload();
+            if (prefs.hasData()) {
+                loadFromXSharedPrefs();
+            }
+        } catch (Throwable ignored) {
+        }
+        if (loadFromFileChannels()) return;
+        // provider 最后试：app 进程可能已被拉起，此时能查到。
+        Context ctx = systemContext();
+        if (ctx != null) {
+            try {
+                Cursor c = ctx.getContentResolver()
+                        .query(ConfigProvider.CONFIG_URI, null, null, null, null);
+                if (c != null) {
+                    try {
+                        while (c.moveToNext()) {
+                            String key = c.getString(0);
+                            int value = c.getInt(1);
+                            applyConfigKey(key, value);
+                        }
+                        configLoaded = true;
+                        logConfig("provider");
+                    } finally {
+                        c.close();
+                    }
+                }
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + " refresh provider failed: " + t.getMessage());
+            }
+        }
+    }
+
+    private static void applyConfigKey(String key, int value) {
+        if (KEY_HIDE_BOTTOM_BAR.equals(key)) {
+            hideBottomBar = value == 1;
+        } else if (KEY_HIDE_THREE_DOT.equals(key)) {
+            hideThreeDot = value == 1;
+        } else if (KEY_FIRST_DRAG_DOCK.equals(key)) {
+            firstDragToDock = value == 1;
+        } else if (KEY_LIVELY_HOURS.equals(key)) {
+            livelyHours = clampHours(value);
+        } else if (KEY_LIVELY_UNLOCK_COUNT.equals(key)) {
+            livelyUnlockCount = value == 1;
+        } else if (KEY_ICON_PAGE.equals(key)) {
+            iconPageEnabled = value == 1;
+        }
+    }
+
+    private static Context systemContext() {
+        Context cached = sSysContext;
+        if (cached != null) return cached;
+        ClassLoader cl = sClassLoader;
+        if (cl == null) return null;
+        try {
+            Object at = XposedHelpers.callStaticMethod(
+                    XposedHelpers.findClass("android.app.ActivityThread", cl),
+                    "currentActivityThread");
+            Object ctx = at == null ? null : XposedHelpers.callMethod(at, "getSystemContext");
+            if (ctx instanceof Context) {
+                sSysContext = (Context) ctx;
+                return sSysContext;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static String readTextFile(String path) {
+        try {
+            java.io.File f = new java.io.File(path);
+            if (!f.exists() || !f.canRead()) {
+                XposedBridge.log(TAG + " read skip " + path + " exists=" + f.exists()
+                        + " readable=" + f.canRead());
+                return null;
+            }
+            StringBuilder sb = new StringBuilder();
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f));
+            try {
+                String line;
+                while ((line = r.readLine()) != null) sb.append(line).append('\n');
+            } finally {
+                r.close();
+            }
+            return sb.toString();
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + " read failed " + path + ": " + t.getMessage());
+            return null;
+        }
+    }
+
+    private static Map<String, String> parseKv(String text) {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (String line : text.split("\n")) {
+            int eq = line.indexOf('=');
+            if (eq <= 0) continue;
+            map.put(line.substring(0, eq).trim(), line.substring(eq + 1).trim());
+        }
+        return map;
+    }
+
+    /** 从 SharedPreferences xml 片段里取 boolean：定位 name="key" 后读同标签内 value="..."。 */
+    private static boolean xmlBool(String xml, String key, boolean def) {
+        String value = xmlValue(xml, key);
+        if (value == null) return def;
+        return "true".equalsIgnoreCase(value);
+    }
+
+    private static int xmlInt(String xml, String key, int def) {
+        String value = xmlValue(xml, key);
+        if (value == null) return def;
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (Throwable ignored) {
+            return def;
+        }
+    }
+
+    private static String xmlValue(String xml, String key) {
+        int i = xml.indexOf("name=\"" + key + "\"");
+        if (i < 0) return null;
+        int end = xml.indexOf("/>", i);
+        if (end < 0) end = Math.min(xml.length(), i + 240);
+        int v = xml.indexOf("value=\"", i);
+        if (v < 0 || v > end) return null;
+        int vEnd = xml.indexOf('"', v + 7);
+        if (vEnd < 0) return null;
+        return xml.substring(v + 7, vEnd);
+    }
+
+    private static void logConfig(String via) {
+        XposedBridge.log(TAG + " config(" + via + ") -> hideBottomBar=" + hideBottomBar
+                + " hideThreeDot=" + hideThreeDot + " firstDragToDock=" + firstDragToDock
+                + " livelyHours=" + livelyHours + " livelyUnlockCount=" + livelyUnlockCount
+                + " iconPage=" + iconPageEnabled);
+    }
+
+    /** 把当前内存值落盘，保证下次开机 restore 拿到的是最新值（含 icon_page）。 */
+    private static void persistConfig() {
+        try {
+            DecoStore.saveCurrent();
+        } catch (Throwable ignored) {
         }
     }
 
@@ -549,10 +784,12 @@ final class DecoHook {
         firstDragToDock = boolOf(map, KEY_FIRST_DRAG_DOCK, firstDragToDock);
         livelyHours = clampHours(intOf(map, KEY_LIVELY_HOURS, livelyHours));
         livelyUnlockCount = boolOf(map, KEY_LIVELY_UNLOCK_COUNT, livelyUnlockCount);
+        iconPageEnabled = boolOf(map, KEY_ICON_PAGE, iconPageEnabled);
         configLoaded = true;
         XposedBridge.log(TAG + " config(store) -> hideBottomBar=" + hideBottomBar
                 + " hideThreeDot=" + hideThreeDot + " firstDragToDock=" + firstDragToDock
-                + " livelyHours=" + livelyHours + " livelyUnlockCount=" + livelyUnlockCount);
+                + " livelyHours=" + livelyHours + " livelyUnlockCount=" + livelyUnlockCount
+                + " iconPage=" + iconPageEnabled);
     }
 
     Map<String, String> configToMap() {
@@ -562,6 +799,7 @@ final class DecoHook {
         map.put(KEY_FIRST_DRAG_DOCK, String.valueOf(firstDragToDock));
         map.put(KEY_LIVELY_HOURS, String.valueOf(livelyHours));
         map.put(KEY_LIVELY_UNLOCK_COUNT, String.valueOf(livelyUnlockCount));
+        map.put(KEY_ICON_PAGE, String.valueOf(iconPageEnabled));
         return map;
     }
 

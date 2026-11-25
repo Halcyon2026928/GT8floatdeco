@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  English flavor. This file overrides every key in main/res/values/strings.xml,
+  so the English APK shows English no matter what system language the device uses.
+  Keep the key set in sync with the Chinese one.
+-->
+<resources>
+    <string name="app_name">FreeformOS</string>
+    <string name="module_desc">Standalone module that hides the bottom bar and the top three-dot menu of freeform windows. Both toggles work independently and persist after a reboot.</string>
+
+    <!-- ==================== Settings ==================== -->
+    <string name="settings_pill">FreeformOS · Standalone Module</string>
+    <string name="settings_title">FreeformOS</string>
+    <string name="settings_subtitle">Choose a group to adjust</string>
+
+    <string name="group_free_window">Freeform Window</string>
+    <string name="item_hide_bottom_bar">Hide Bottom Bar</string>
+    <string name="item_hide_three_dot">Hide Overflow Menu</string>
+    <string name="item_first_drag_dock">First Drag to Dock</string>
+
+    <string name="group_lively">Lively Window</string>
+    <string name="item_unlock_count">Remove Count Limit</string>
+    <string name="item_lively_hours">Background Duration</string>
+
+    <string name="group_task_card">Task Cards</string>
+    <string name="item_cover_full">Fill Card Cover</string>
+    <string name="item_cover_full_desc">Crop the snapshot to fill the card and remove the top and bottom black bars</string>
+    <string name="item_app_customize">Per-App Covers</string>
+    <string name="item_app_customize_desc">Set a custom card image for an individual app</string>
+
+    <string name="app_customize_count">%1$d apps customized</string>
+    <string name="lively_unlimited">Unlimited</string>
+    <string name="lively_hours">%1$d h</string>
+    <string name="lively_hours_1">1 h</string>
+
+    <!-- ==================== Per-App Covers ==================== -->
+    <string name="ac_title">Per-App Covers</string>
+    <string name="ac_subtitle">Pick an app to set the image shown on its card after you swipe it away</string>
+    <string name="ac_display_label">Display for other apps</string>
+    <string name="ac_display_desc">Apps with their own image always show it. Choose Official to restore the system look for everything — images are kept.</string>
+    <string name="mode_cover">Crop</string>
+    <string name="mode_official">Official</string>
+    <string name="mode_splash">Splash</string>
+
+    <string name="ac_search_hint">Search app name or package</string>
+    <string name="ac_filter_all">All Apps</string>
+    <string name="ac_filter_custom">Customized</string>
+    <string name="ac_loading">Loading apps…</string>
+    <string name="ac_empty_custom">No apps customized yet</string>
+    <string name="ac_empty_user">No matching user apps\nTap ⋮ at the top right to show system apps</string>
+    <string name="ac_empty_any">No matching apps</string>
+
+    <string name="ac_no_picker">No image picker available</string>
+    <string name="ac_saving">Saving…</string>
+    <string name="ac_saved">Saved — takes effect on the launcher</string>
+    <string name="ac_save_failed">Save failed. Try another image.</string>
+    <string name="ac_cleared">Cleared</string>
+
+    <string name="ac_system_tag"> · System</string>
+    <string name="ac_customized">Customized</string>
+    <string name="ac_clear">Clear</string>
+    <string name="ac_pick">Choose</string>
+
+    <string name="ac_show_system">Show System Apps</string>
+    <string name="ac_sort">Sort</string>
+    <string name="sort_by_name">By Name</string>
+    <string name="sort_by_time">By Install Time</string>
+    <string name="sort_by_pkg">By Package</string>
+    <string name="sort_value_name">Name</string>
+    <string name="sort_value_time">Install Time</string>
+    <string name="sort_value_pkg">Package</string>
+</resources>
