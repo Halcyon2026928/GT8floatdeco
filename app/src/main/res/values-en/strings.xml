@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  English flavor. This file overrides every key in main/res/values/strings.xml,
-  so the English APK shows English no matter what system language the device uses.
-  Keep the key set in sync with the Chinese one.
+  English resources. Picked up when the app language is English (the switch on the
+  settings page, or a non-Chinese system language when nothing has been chosen yet).
+  Keep the key set identical to values/strings.xml.
 -->
 <resources>
     <string name="app_name">FreeformOS</string>
@@ -12,6 +12,7 @@
     <string name="settings_pill">FreeformOS · Standalone Module</string>
     <string name="settings_title">FreeformOS</string>
     <string name="settings_subtitle">Choose a group to adjust</string>
+    <string name="lang_switch_label">English</string>
 
     <string name="group_free_window">Freeform Window</string>
     <string name="item_hide_bottom_bar">Hide Bottom Bar</string>
@@ -24,11 +25,8 @@
 
     <string name="group_task_card">Task Cards</string>
     <string name="item_cover_full">Fill Card Cover</string>
-    <string name="item_cover_full_desc">Crop the snapshot to fill the card and remove the top and bottom black bars</string>
     <string name="item_app_customize">Per-App Covers</string>
-    <string name="item_app_customize_desc">Set a custom card image for an individual app</string>
 
-    <string name="app_customize_count">%1$d apps customized</string>
     <string name="lively_unlimited">Unlimited</string>
     <string name="lively_hours">%1$d h</string>
     <string name="lively_hours_1">1 h</string>

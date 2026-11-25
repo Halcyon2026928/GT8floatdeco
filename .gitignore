@@ -8,3 +8,4 @@ build_*.txt
 out*.txt
 .workbuddy/
 extracted_*/
+release/*.apk

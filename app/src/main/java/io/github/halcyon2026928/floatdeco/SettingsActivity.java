@@ -55,6 +55,12 @@ public class SettingsActivity extends Activity {
     private boolean syncing;
     private boolean light;
 
+    /** 界面语言在这里生效：换一套 locale 的 Context，切换语言时 recreate 即可。 */
+    @Override
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(LocaleHelper.wrap(base));
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -78,6 +84,19 @@ public class SettingsActivity extends Activity {
                     int next = nextThemeMode(resolveThemeMode());
                     getSharedPreferences(UI_PREFS, Context.MODE_PRIVATE)
                             .edit().putInt(KEY_THEME_MODE, next).commit();
+                    recreate();
+                }
+            });
+        }
+
+        TextView langBtn = findViewById(R.id.btn_lang);
+        if (langBtn != null) {
+            // 文案本身就是「另一种语言」的名字：中文界面显示 English，英文界面显示 中文。
+            langBtn.setText(R.string.lang_switch_label);
+            langBtn.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    LocaleHelper.toggle(SettingsActivity.this);
                     recreate();
                 }
             });
@@ -249,22 +268,6 @@ public class SettingsActivity extends Activity {
                 }
             });
         }
-        refreshCustomizeCount();
-    }
-
-    private void refreshCustomizeCount() {
-        TextView tv = findViewById(R.id.tv_app_customize_count);
-        if (tv == null) return;
-        int n = CustomCovers.listLocal(this).size();
-        tv.setText(n <= 0 ? getString(R.string.item_app_customize_desc)
-                : getString(R.string.app_customize_count, n));
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        // 从「应用自定义」回来时刷新计数。
-        refreshCustomizeCount();
     }
 
     private void writePref(String key, boolean value) {

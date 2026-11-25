@@ -7,6 +7,7 @@
     <string name="settings_pill">自由小窗OS · 独立模块</string>
     <string name="settings_title">自由小窗OS</string>
     <string name="settings_subtitle">选择要调整的分组</string>
+    <string name="lang_switch_label">中文</string>
 
     <string name="group_free_window">自由小窗</string>
     <string name="item_hide_bottom_bar">隐藏窗口白条</string>
@@ -19,11 +20,8 @@
 
     <string name="group_task_card">任务卡片</string>
     <string name="item_cover_full">封面铺满</string>
-    <string name="item_cover_full_desc">自由小窗快照在卡片里按裁剪铺满，消除上下黑边</string>
     <string name="item_app_customize">应用自定义</string>
-    <string name="item_app_customize_desc">为单个应用指定卡片图片</string>
 
-    <string name="app_customize_count">已自定义 %1$d 个应用</string>
     <string name="lively_unlimited">不限</string>
     <string name="lively_hours">%1$d 小时</string>
     <string name="lively_hours_1">1 小时</string>

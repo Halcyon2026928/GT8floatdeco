@@ -14,18 +14,8 @@ android {
         versionName "1.0.3"
     }
 
-    // 一套代码出两个 APK：中文版 / 英文版。
-    // main/res/values/strings.xml 是中文（默认），src/en 覆盖成英文。
-    // 用 flavor 而不是 values-en，这样英文包不看系统语言，永远是英文。
-    flavorDimensions += "lang"
-    productFlavors {
-        zh {
-            dimension "lang"
-        }
-        en {
-            dimension "lang"
-        }
-    }
+    // 中英文在同一个包里：main/res/values 是中文，values-en 是英文，
+    // 设置页的语言按钮运行时切换（LocaleHelper 包一层 Configuration），不走多 APK。
 
     buildTypes {
         release {
@@ -42,7 +32,7 @@ android {
     androidComponents {
         onVariants(selector().all()) { variant ->
             variant.outputs.forEach { output ->
-                output.outputFileName.set("freeformos-${variant.flavorName}-${variant.buildType}.apk")
+                output.outputFileName.set("freeformos-${variant.buildType}.apk")
             }
         }
     }
