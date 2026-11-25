@@ -102,6 +102,9 @@ final class DecoHook {
 
         // 第七层：新窗口进坞窗时那处 livelySize == 2 的降级
         hookJoinLivelyGuard(cl);
+
+        // 第八层：兜底掐掉「弹菜单」这个动作本身（notifySystemEvent 1001）
+        hookMenuNotifyGuard(cl);
     }
 
     /**
@@ -770,28 +773,30 @@ final class DecoHook {
                                 // 迷你浮窗的单击是「恢复成自由小窗」，吞掉会把恢复打死。
                                 if (isMiniZoomState(thisObj)) return;
 
-                                Rect region = handleButtonRegion(thisObj);
-                                if (region == null || region.isEmpty()) return;
-
                                 MotionEvent ev = (MotionEvent) param.args[0];
                                 int x = (int) ev.getX();
                                 int y = (int) ev.getY();
-                                if (!region.contains(x, y)) return;
 
-                                int actionFlag = (int) XposedHelpers.getIntField(thisObj, "mActionFlag");
-
-                                // ColorOS 16 上 mActionFlag 有时来不及更新，纯坐标判定；
-                                // 若该 ROM 把矩形放大到接近整个 caption，则退回 flag 判定。
-                                if (isColorOs16Rom() && !isRegionTooLarge(thisObj, region)) {
-                                    XposedBridge.log(TAG + " blocked three-dot menu tap (c16, by rect) at "
-                                            + x + "," + y);
+                                /*
+                                 * 主判定：mActionFlag == 1 就是「按在标题栏按钮区」。
+                                 * 官方弹菜单（actionFlag 分支里的 notifySystemEvent 1001）只走这里，
+                                 * 所以不看坐标、不看矩形大小，flag 命中就直接吃掉。
+                                 * 之前按矩形判定会漏：系统算按钮区的范围比自己 ulimit 的那块大，
+                                 * 点偏一点就不再 contains，菜单照样弹出来。
+                                 */
+                                int actionFlag = XposedHelpers.getIntField(thisObj, "mActionFlag");
+                                if (actionFlag == 1) {
+                                    XposedBridge.log(TAG + " blocked menu tap by flag at " + x + "," + y);
                                     param.setResult(false);
                                     return;
                                 }
 
-                                if (actionFlag != 1) return; // HANDLE_EVENT
+                                // 兜底：部分 ROM 的 mActionFlag 来不及更新，再按热区矩形判一次。
+                                Rect region = handleButtonRegion(thisObj);
+                                if (region == null || region.isEmpty()) return;
+                                if (!region.contains(x, y)) return;
 
-                                XposedBridge.log(TAG + " blocked three-dot menu tap at " + x + "," + y);
+                                XposedBridge.log(TAG + " blocked menu tap by rect at " + x + "," + y);
                                 param.setResult(false);
                             } catch (Throwable t) {
                                 XposedBridge.log(TAG + " onSingleTapUp block error: " + t.getMessage());
@@ -801,6 +806,50 @@ final class DecoHook {
             XposedBridge.log(TAG + " FlexibleCaptionView.onSingleTapUp menu block hook success");
         } catch (Throwable t) {
             XposedBridge.log(TAG + " hook onSingleTapUp failed: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 兜底：直接把「弹菜单」这个动作本身掐掉。
+     *
+     * <p>官方链路是 {@code FlexibleCaptionView.onSingleTapUp(...)} 里
+     * {@code setFlexibleMenuShowing(true)} 之后调
+     * {@code mFlexibleTaskController.notifySystemEvent(task, 1001)}，
+     * SystemUI 收到 1001 才显示 {@code FlexibleTaskMenu}。整个 wm 只有这一处发 1001，
+     * 所以在这里截断就不会再弹，而且不影响全屏 / 关闭 / 最小化这些其它按钮。</p>
+     */
+    private void hookMenuNotifyGuard(ClassLoader cl) {
+        try {
+            Class<?> controllerClass = XposedHelpers.findClass(
+                    "com.android.server.wm.FlexibleTaskController", cl);
+            for (Method method : controllerClass.getDeclaredMethods()) {
+                if (!"notifySystemEvent".equals(method.getName())) continue;
+                Class<?>[] types = method.getParameterTypes();
+                if (types.length != 2 || types[1] != int.class) continue;
+                method.setAccessible(true);
+                XposedBridge.hookMethod(method, new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        if (!hideThreeDot) return;
+                        try {
+                            int event = (Integer) param.args[1];
+                            if (event != 1001) return;
+                            // 官方在调用前已把「菜单正在显示」置位，这里复位避免状态卡住。
+                            try {
+                                XposedHelpers.callMethod(param.thisObject, "setFlexibleMenuShowing", false);
+                            } catch (Throwable ignored) {
+                            }
+                            param.setResult(null);
+                            XposedBridge.log(TAG + " blocked menu notify(event=1001)");
+                        } catch (Throwable t) {
+                            XposedBridge.log(TAG + " menu notify guard error: " + t.getMessage());
+                        }
+                    }
+                });
+                XposedBridge.log(TAG + " menu notify(event=1001) guard installed");
+            }
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + " hook menu notify guard failed: " + t.getMessage());
         }
     }
 

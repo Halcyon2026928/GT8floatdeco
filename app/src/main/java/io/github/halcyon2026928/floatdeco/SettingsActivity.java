@@ -25,6 +25,8 @@ public class SettingsActivity extends Activity {
     static final String KEY_FIRST_DRAG_DOCK = "first_drag_to_dock";
     static final String KEY_LIVELY_HOURS = "lively_run_hours";
     static final String KEY_LIVELY_UNLOCK_COUNT = "lively_unlock_count";
+    /** 后台卡片封面铺满：自由小窗快照在最近任务卡片里按 cover 铺满，消除上下黑边。 */
+    static final String KEY_CARD_COVER = CardCoverHook.KEY_CARD_COVER;
 
     static final String KEY_THEME_MODE = "theme_mode";
     static final int THEME_FOLLOW_SYSTEM = 0;
@@ -43,6 +45,7 @@ public class SettingsActivity extends Activity {
     private Switch threeDotSwitch;
     private Switch firstDragSwitch;
     private Switch livelyCountSwitch;
+    private Switch cardCoverSwitch;
     private SeekBar livelySeek;
     private TextView livelyValue;
 
@@ -84,6 +87,7 @@ public class SettingsActivity extends Activity {
         threeDotSwitch = findViewById(R.id.switch_three_dot);
         firstDragSwitch = findViewById(R.id.switch_first_drag);
         livelyCountSwitch = findViewById(R.id.switch_lively_count);
+        cardCoverSwitch = findViewById(R.id.switch_card_cover);
         livelySeek = findViewById(R.id.seek_lively_hours);
         livelyValue = findViewById(R.id.tv_lively_value);
 
@@ -115,6 +119,15 @@ public class SettingsActivity extends Activity {
                 writePref(KEY_LIVELY_UNLOCK_COUNT, isChecked);
             }
         });
+        if (cardCoverSwitch != null) {
+            cardCoverSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                    if (syncing) return;
+                    writePref(KEY_CARD_COVER, isChecked);
+                }
+            });
+        }
 
         if (livelySeek != null) {
             livelySeek.setMax(HOUR_STEPS.length - 1);
@@ -190,6 +203,7 @@ public class SettingsActivity extends Activity {
         threeDotSwitch.setChecked(readPref(KEY_HIDE_THREE_DOT, true));
         firstDragSwitch.setChecked(readPref(KEY_FIRST_DRAG_DOCK, true));
         livelyCountSwitch.setChecked(readPref(KEY_LIVELY_UNLOCK_COUNT, true));
+        if (cardCoverSwitch != null) cardCoverSwitch.setChecked(readPref(KEY_CARD_COVER, true));
         int hours = readLivelyHours();
         if (livelySeek != null) livelySeek.setProgress(stepOfHours(hours));
         if (livelyValue != null) livelyValue.setText(labelOfLively(hours));
@@ -255,6 +269,7 @@ public class SettingsActivity extends Activity {
             intent.putExtra(KEY_FIRST_DRAG_DOCK, prefs.getBoolean(KEY_FIRST_DRAG_DOCK, true));
             intent.putExtra(KEY_LIVELY_HOURS, prefs.getInt(KEY_LIVELY_HOURS, 1));
             intent.putExtra(KEY_LIVELY_UNLOCK_COUNT, prefs.getBoolean(KEY_LIVELY_UNLOCK_COUNT, true));
+            intent.putExtra(KEY_CARD_COVER, prefs.getBoolean(KEY_CARD_COVER, true));
             ctx.sendBroadcast(intent);
         } catch (Throwable ignored) {
         }

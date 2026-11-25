@@ -12,6 +12,10 @@ import io.github.libxposed.api.XposedModuleInterface;
 public class DecoModule extends XposedModule {
 
     private volatile boolean installed;
+    private volatile boolean launcherInstalled;
+
+    /** OPlus/ColorOS 的默认桌面（OplusLauncher）包名；最近任务卡片由它绘制。 */
+    private static final String LAUNCHER_PKG = "com.android.launcher";
 
     @Override
     public void onModuleLoaded(XposedModuleInterface.ModuleLoadedParam param) {
@@ -20,6 +24,25 @@ public class DecoModule extends XposedModule {
                 + " systemServer=" + param.isSystemServer()
                 + " framework=" + getFrameworkName() + " " + getFrameworkVersion()
                 + " api=" + getApiVersion());
+    }
+
+    /**
+     * Launcher 进程加载时注入后台卡片封面 hook。
+     * system_server 的第一个包由 onSystemServerStarting 接管，所以这里不会与之冲突。
+     */
+    @Override
+    public void onPackageLoaded(XposedModuleInterface.PackageLoadedParam param) {
+        if (launcherInstalled) return;
+        if (!LAUNCHER_PKG.equals(param.getPackageName())) return;
+        launcherInstalled = true;
+        XposedBridge.log("launcher package loaded: " + param.getPackageName()
+                + " first=" + param.isFirstPackage());
+        try {
+            new CardCoverHook().install(param.getDefaultClassLoader());
+            XposedBridge.log("CardCoverHook installed on launcher");
+        } catch (Throwable t) {
+            XposedBridge.log("CardCoverHook install failed: " + t);
+        }
     }
 
     @Override

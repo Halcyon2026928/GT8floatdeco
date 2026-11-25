@@ -225,7 +225,7 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ========== 分组 2：后台运行 ========== -->
+            <!-- ========== 分组 2：灵动窗口 ========== -->
             <LinearLayout
                 android:id="@+id/header_background"
                 android:layout_width="match_parent"
@@ -243,7 +243,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:letterSpacing="0.02"
-                    android:text="后台运行"
+                    android:text="灵动窗口"
                     android:textColor="?attr/fwTextPrimary"
                     android:textSize="16sp"
                     android:textStyle="bold" />
@@ -293,6 +293,46 @@
 
                     <Switch
                         android:id="@+id/switch_lively_count"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="9dp"
+                    android:background="?attr/fwCardBackground"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="后台卡片封面铺满"
+                            android:textColor="?attr/fwTextPrimary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="自由小窗快照铺满最近任务卡片，消除上下黑边"
+                            android:textColor="?attr/fwTextSecondary"
+                            android:textSize="11sp" />
+
+                    </LinearLayout>
+
+                    <Switch
+                        android:id="@+id/switch_card_cover"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="16dp" />
