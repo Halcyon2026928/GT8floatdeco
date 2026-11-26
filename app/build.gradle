@@ -10,8 +10,8 @@ android {
         applicationId "io.github.halcyon2026928.floatdeco"
         minSdk 26
         targetSdk 32
-        versionCode 103
-        versionName "1.0.3"
+        versionCode 104
+        versionName "1.0.4"
     }
 
     // 中英文在同一个包里：main/res/values 是中文，values-en 是英文，

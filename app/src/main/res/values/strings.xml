@@ -15,11 +15,12 @@
     <string name="item_first_drag_dock">首次拖动直达坞窗</string>
 
     <string name="group_lively">灵动窗口</string>
+    <string name="lively_unsupported">(该型号不支持)</string>
     <string name="item_unlock_count">解除数量限制</string>
     <string name="item_lively_hours">后台运行时长</string>
 
-    <string name="group_task_card">任务卡片</string>
-    <string name="item_cover_full">封面铺满</string>
+    <string name="group_task_card">堆叠后台</string>
+    <string name="item_cover_full">关闭自由小窗后台卡片铺满</string>
     <string name="item_app_customize">应用自定义</string>
 
     <string name="lively_unlimited">不限</string>

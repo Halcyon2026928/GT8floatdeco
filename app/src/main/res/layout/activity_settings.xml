@@ -219,38 +219,6 @@
                         android:layout_marginStart="16dp" />
                 </LinearLayout>
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp"
-                    android:background="?attr/fwCardBackground"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="14dp">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/item_first_drag_dock"
-                            android:textColor="?attr/fwTextPrimary"
-                            android:textSize="14sp"
-                            android:textStyle="bold" />
-
-                        
-                    </LinearLayout>
-
-                    <Switch
-                        android:id="@+id/switch_first_drag"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="16dp" />
-                </LinearLayout>
             </LinearLayout>
 
             <!-- ========== 分组 2：灵动窗口 ========== -->
@@ -293,6 +261,39 @@
                 android:layout_marginStart="12dp"
                 android:orientation="vertical"
                 android:visibility="gone">
+
+                <!-- 首次拖动直达坞窗：属于灵动窗口的能力，放在本组第一项 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="9dp"
+                    android:background="?attr/fwCardBackground"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/item_first_drag_dock"
+                            android:textColor="?attr/fwTextPrimary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+
+                    <Switch
+                        android:id="@+id/switch_first_drag"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp" />
+                </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"

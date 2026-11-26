@@ -6,8 +6,17 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
+import android.graphics.Color;
 import android.os.Bundle;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.SeekBar;
@@ -43,6 +52,9 @@ public class SettingsActivity extends Activity {
 
     /** 拖动条档位：1、2、4、8、12 小时，最后一档 0 表示不限。 */
     private static final int[] HOUR_STEPS = {1, 2, 4, 8, 12, 0};
+
+    /** 禁用行的文字色：统一半透明黑，不分原色是主色、次要色还是强调紫。 */
+    private static final int DIM_TEXT_COLOR = 0x66000000;
 
     private Switch bottomBarSwitch;
     private Switch threeDotSwitch;
@@ -156,6 +168,7 @@ public class SettingsActivity extends Activity {
                 public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                     if (syncing) return;
                     writePref(KEY_CARD_COVER, isChecked);
+                    applyAppCustomizeEnabled(isChecked);
                 }
             });
         }
@@ -184,20 +197,36 @@ public class SettingsActivity extends Activity {
         }
 
         syncFromPrefs();
+        applyLivelySupportGate();
     }
 
+    /**
+     * 沉浸式状态栏：状态栏透明、页面渐变背景延伸到状态栏下方，
+     * 内容顶部补一段状态栏高度的 padding，避免胶囊标签被状态栏压住。
+     */
     private void applyStatusBar(boolean lightIcons) {
         try {
-            View decor = getWindow().getDecorView();
-            int flags = decor.getSystemUiVisibility();
+            Window window = getWindow();
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+            window.setStatusBarColor(Color.TRANSPARENT);
+            View decor = window.getDecorView();
+            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
             if (lightIcons) {
                 flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            } else {
-                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
             }
             decor.setSystemUiVisibility(flags);
+            View root = findViewById(R.id.root);
+            if (root != null) {
+                int pad = (int) (14 * getResources().getDisplayMetrics().density);
+                root.setPadding(pad, pad + statusBarHeight(), pad, pad);
+            }
         } catch (Throwable ignored) {
         }
+    }
+
+    private int statusBarHeight() {
+        int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        return id > 0 ? getResources().getDimensionPixelSize(id) : 0;
     }
 
     /**
@@ -235,11 +264,143 @@ public class SettingsActivity extends Activity {
         threeDotSwitch.setChecked(readPref(KEY_HIDE_THREE_DOT, true));
         firstDragSwitch.setChecked(readPref(KEY_FIRST_DRAG_DOCK, true));
         livelyCountSwitch.setChecked(readPref(KEY_LIVELY_UNLOCK_COUNT, true));
-        if (cardCoverSwitch != null) cardCoverSwitch.setChecked(readPref(KEY_CARD_COVER, true));
+        boolean cover = readPref(KEY_CARD_COVER, true);
+        if (cardCoverSwitch != null) cardCoverSwitch.setChecked(cover);
         int hours = readLivelyHours();
         if (livelySeek != null) livelySeek.setProgress(stepOfHours(hours));
         if (livelyValue != null) livelyValue.setText(labelOfLively(hours));
         syncing = false;
+        // setChecked 在 syncing 期间被 listener 忽略，这里的初始态要单独刷一次。
+        applyAppCustomizeEnabled(cover);
+    }
+
+    /**
+     * 「灵动窗口」的底层实现只存在于 RMX6699 / RMX5200 的 16 版本 ROM 里：
+     * 其它机型、以及这两个机型的 17 版本都没有对应类与资源，强开也不会生效。
+     * 这种环境下把该分组的子项整行置灰并禁止操作，标题后缀标一句不支持，标题文字本身不变灰。
+     */
+    private void applyLivelySupportGate() {
+        String display = android.os.Build.DISPLAY;
+        if (display == null) display = "";
+        if (display.startsWith("RMX6699_16") || display.startsWith("RMX5200_16")) return;
+        ViewGroup items = findViewById(R.id.items_background);
+        if (items != null) {
+            for (int i = 0; i < items.getChildCount(); i++) {
+                applyDimmedRow(items.getChildAt(i), true);
+            }
+            resetControlsOff(items);
+        }
+        markLivelyUnsupported();
+    }
+
+    /**
+     * 不支持机型上这些能力本身不存在，开关一律显示为「关」、滑块回到最小档，
+     * 只改界面表现，不写回 pref —— 换回支持的机型时用户原来的设置还在。
+     */
+    private void resetControlsOff(View v) {
+        if (v instanceof CompoundButton) {
+            CompoundButton cb = (CompoundButton) v;
+            boolean prev = syncing;
+            syncing = true;
+            cb.setChecked(false);
+            syncing = prev;
+        } else if (v instanceof SeekBar) {
+            SeekBar sb = (SeekBar) v;
+            boolean prev = syncing;
+            syncing = true;
+            sb.setProgress(0);
+            syncing = prev;
+            if (livelyValue != null) {
+                if (livelyValue.getTag() == null) livelyValue.setTag(livelyValue.getCurrentTextColor());
+                livelyValue.setTextColor(DIM_TEXT_COLOR);
+                livelyValue.setText(labelOfLively(HOUR_STEPS[0]));
+            }
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) v;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                resetControlsOff(group.getChildAt(i));
+            }
+        }
+    }
+
+    /**
+     * 统一的「禁用行」样式，灵动窗口子项与「应用自定义」入口共用：
+     * 卡片底保持不透明、文字压成固定灰、控件走系统禁用态。
+     * 不用整行 alpha —— 同一透明度叠在页面渐变的不同位置上深浅不一，永远对不齐。
+     */
+    private void applyDimmedRow(View row, boolean dim) {
+        if (row == null) return;
+        row.setEnabled(!dim);
+        row.setClickable(!dim);
+        row.setAlpha(1f);
+        dimContent(row, dim);
+    }
+
+    private void dimContent(View v, boolean dim) {
+        if (v == null) return;
+        if (v instanceof TextView) {
+            TextView tv = (TextView) v;
+            if (dim) {
+                if (tv.getTag() == null) tv.setTag(tv.getCurrentTextColor());
+                // 统一压成同一个半透明黑：原色无论是主色、次要色还是强调紫，
+                // 合成到底色上都是同一种灰，整页灰态才完全一致。
+                tv.setTextColor(DIM_TEXT_COLOR);
+            } else {
+                Object tag = tv.getTag();
+                if (tag instanceof Integer) tv.setTextColor((Integer) tag);
+                tv.setTag(null);
+            }
+        }
+        if (v instanceof Switch || v instanceof SeekBar) {
+            v.setEnabled(!dim);
+            v.setClickable(!dim);
+            v.setOnTouchListener(dim ? consumeTouch : null);
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) v;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                dimContent(group.getChildAt(i), dim);
+            }
+        }
+    }
+
+    private static final View.OnTouchListener consumeTouch = new View.OnTouchListener() {
+        @Override
+        public boolean onTouch(View view, MotionEvent event) {
+            return true;
+        }
+    };
+
+    /** 大标题后面补一句「(该型号不支持)」：字号略小，颜色按原色压透明度，深浅主题都适用。 */
+    private void markLivelyUnsupported() {
+        View header = findViewById(R.id.header_background);
+        if (!(header instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) header;
+        if (group.getChildCount() == 0 || !(group.getChildAt(0) instanceof TextView)) return;
+        TextView title = (TextView) group.getChildAt(0);
+        String suffix = getString(R.string.lively_unsupported);
+        CharSequence origin = title.getText();
+        if (origin != null && origin.toString().endsWith(suffix)) return;
+        SpannableStringBuilder text = new SpannableStringBuilder();
+        text.append(origin == null ? "" : origin).append(' ').append(suffix);
+        int start = text.length() - suffix.length();
+        text.setSpan(new RelativeSizeSpan(0.78f), start, text.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        int base = title.getCurrentTextColor();
+        text.setSpan(new ForegroundColorSpan((base & 0x00FFFFFF) | 0x8A000000),
+                start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        title.setText(text);
+    }
+
+    /**
+     * 「封面铺满」是总开关：关掉后后台卡片整张交还官方，自定义图也不再绘制，
+     * 所以「应用自定义」入口跟着变灰、不可点击。图片本身不删，重新打开开关就能继续用。
+     */
+    private void applyAppCustomizeEnabled(boolean on) {
+        View row = findViewById(R.id.row_app_customize);
+        if (row == null) return;
+        applyDimmedRow(row, !on);
     }
 
     private boolean readPref(String key, boolean def) {

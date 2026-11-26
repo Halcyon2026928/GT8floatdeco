@@ -633,6 +633,9 @@ final class CardCoverHook {
 
         // 官方：整条接管路径都不走，连反射读 mThumbnailData 都省掉。
         if (mode == MODE_OFFICIAL) return false;
+        // 「封面铺满」是总开关：关掉以后连自定义图和启动页图标都不画，
+        // 整张卡片交还官方（after 钩子里 restoreCoverIfApplied 负责把 shader 矩阵还原）。
+        if (!enabled) return false;
         // 裁剪页 + 没有任何自定义图：没有可画的东西，直接交给 after 补 cover。
         if (mode == MODE_COVER && !CustomCovers.hasAny()) return false;
 

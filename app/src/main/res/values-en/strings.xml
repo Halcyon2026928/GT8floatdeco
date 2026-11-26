@@ -20,11 +20,12 @@
     <string name="item_first_drag_dock">First Drag to Dock</string>
 
     <string name="group_lively">Lively Window</string>
+    <string name="lively_unsupported">(unsupported on this model)</string>
     <string name="item_unlock_count">Remove Count Limit</string>
     <string name="item_lively_hours">Background Duration</string>
 
-    <string name="group_task_card">Task Cards</string>
-    <string name="item_cover_full">Fill Card Cover</string>
+    <string name="group_task_card">Stack Backend</string>
+    <string name="item_cover_full">Disable Background Card Fill</string>
     <string name="item_app_customize">Per-App Covers</string>
 
     <string name="lively_unlimited">Unlimited</string>
