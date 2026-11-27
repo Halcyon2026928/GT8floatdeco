@@ -13,10 +13,13 @@ import android.widget.ImageView;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * 自由小窗标题栏装饰：隐藏底部白条、移除顶部三点菜单栏。
@@ -60,6 +63,25 @@ final class DecoHook {
     /** 缓存的 system_server 上下文与 ClassLoader，供配置直读通道使用。 */
     private static volatile Context sSysContext;
     private static volatile ClassLoader sClassLoader;
+    /** 已创建的标题栏视图（弱引用），开关变化时就地重刷，不必重开窗口。 */
+    private static final java.util.List<WeakReference<View>> sCaptionViews = new ArrayList<>();
+    /** 被本模块摘掉的三点按钮：记下原父容器与下标，关掉开关时插回原位。 */
+    private static final java.util.List<RemovedChild> sRemovedThreeDot = new ArrayList<>();
+    /** 底部横条各视图被隐藏前的 visibility，恢复时按原值还原。 */
+    private static final Map<View, Integer> sBottomBarOriginal = new WeakHashMap<>();
+
+    /** 被摘掉的子视图及其原始位置；父子都用弱引用，窗口销毁后不留引用。 */
+    private static final class RemovedChild {
+        final WeakReference<ViewGroup> parent;
+        final WeakReference<View> child;
+        final int index;
+
+        RemovedChild(ViewGroup p, View c, int i) {
+            parent = new WeakReference<>(p);
+            child = new WeakReference<>(c);
+            index = i;
+        }
+    }
 
     private static String sRomDisplayId;
 
@@ -118,6 +140,41 @@ final class DecoHook {
 
         // 第九层：上滑关闭自由小窗时标记 task，供最近任务卡片显示图标页
         hookSlideUpIconMark(cl);
+
+        // 第十层：推送广播等 AMS.systemReady 之后再注册
+        hookAmsReady(cl);
+    }
+
+    /**
+     * 推送广播在 AMS.systemReady 之后注册一次。
+     *
+     * <p>开机早期 {@code registerReceiver} 会抛 NPE（IActivityManager 还是 null），
+     * 之前在装钩子入口先试、失败再 2 秒一次重试属于兜底。这里等到系统真正就绪再注册，
+     * 失败只留一条日志。</p>
+     */
+    private void hookAmsReady(ClassLoader cl) {
+        try {
+            Class<?> ams = XposedHelpers.findClass("com.android.server.am.ActivityManagerService", cl);
+            boolean hooked = false;
+            for (Method m : ams.getDeclaredMethods()) {
+                if (!"systemReady".equals(m.getName())) continue;
+                m.setAccessible(true);
+                XposedBridge.hookMethod(m, new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        DecoStore.onAmsReady();
+                    }
+                });
+                hooked = true;
+            }
+            if (hooked) {
+                XposedBridge.log(TAG + " AMS.systemReady hook installed");
+            } else {
+                XposedBridge.log(TAG + " AMS.systemReady not found");
+            }
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + " hook AMS.systemReady failed: " + t.getMessage());
+        }
     }
 
     /** 上滑关闭自由小窗：slideUpAndExitMini 触发时把 taskId 标记为「显示图标页」。 */
@@ -479,32 +536,156 @@ final class DecoHook {
         return false;
     }
 
-    /** 每次自由小窗创建时按当前开关改视图树。 */
-    private void applyCaptionDecor(Object captionView) {        loadConfig(captionView);
+    /** 每次自由小窗创建时按当前开关改视图树，并把标题栏记下来供后续重刷。 */
+    private void applyCaptionDecor(Object captionView) {
+        loadConfig(captionView);
+        if (!(captionView instanceof View)) return;
+        View captionRoot = (View) captionView;
+        trackCaptionView(captionRoot);
+        applyCaptionPolicy(captionRoot);
+    }
 
-        // ---- 隐藏底部手势小横条（开关：hide_bottom_bar） ----
-        if (hideBottomBar) {
-            View bottomFrame = (View) XposedHelpers.getObjectField(captionView, "mBottomFrame");
-            View bottomHandleView = (View) XposedHelpers.getObjectField(captionView, "mBottomHandleView");
-            View bottomHandleLongView = (View) XposedHelpers.getObjectField(captionView, "mBottomHandleLongView");
+    /** 按当前开关刷一遍标题栏：底部横条 + 顶部三点按钮。 */
+    private void applyCaptionPolicy(View captionRoot) {
+        applyBottomBarPolicy(captionRoot);
+        applyThreeDotPolicy(captionRoot);
+    }
 
-            if (bottomFrame != null) bottomFrame.setVisibility(View.GONE);
-            if (bottomHandleView != null) bottomHandleView.setVisibility(View.GONE);
-            if (bottomHandleLongView != null) bottomHandleLongView.setVisibility(View.GONE);
-            XposedBridge.log(TAG + " hidden freeform bottom handle bar");
-        }
-
-        // ---- 移除顶部三点菜单按钮（开关：hide_three_dot_menu） ----
-        if (hideThreeDot && captionView instanceof View) {
-            View captionRoot = (View) captionView;
-            if (DUMP_CAPTION_TREE) {
-                dumpViewTree(captionRoot, 0);
+    /** 把已打开的标题栏记进弱引用表（去重）。 */
+    private void trackCaptionView(View captionRoot) {
+        synchronized (sCaptionViews) {
+            Iterator<WeakReference<View>> it = sCaptionViews.iterator();
+            while (it.hasNext()) {
+                View v = it.next().get();
+                if (v == null) {
+                    it.remove();
+                } else if (v == captionRoot) {
+                    return;
+                }
             }
-            View menuButton = removeThreeDotMenuButton(captionRoot);
-            if (menuButton != null) {
-                XposedBridge.log(TAG + " removed freeform three-dot menu button: " + describe(menuButton));
+            sCaptionViews.add(new WeakReference<>(captionRoot));
+        }
+    }
+
+    /**
+     * 配置变化后由 {@link DecoStore} 调用：把已打开的标题栏按新开关重刷一遍，
+     * 不必关掉再重开窗口。
+     */
+    void refreshAfterConfigChanged() {
+        List<View> alive = new ArrayList<>();
+        synchronized (sCaptionViews) {
+            Iterator<WeakReference<View>> it = sCaptionViews.iterator();
+            while (it.hasNext()) {
+                View v = it.next().get();
+                if (v == null) {
+                    it.remove();
+                } else {
+                    alive.add(v);
+                }
+            }
+        }
+        for (View v : alive) {
+            try {
+                applyCaptionPolicy(v);
+            } catch (Throwable t) {
+                XposedBridge.log(TAG + " refresh caption policy failed: " + t.getMessage());
+            }
+        }
+    }
+
+    private void applyBottomBarPolicy(View captionRoot) {
+        View bottomFrame = getViewField(captionRoot, "mBottomFrame");
+        View bottomHandleView = getViewField(captionRoot, "mBottomHandleView");
+        View bottomHandleLongView = getViewField(captionRoot, "mBottomHandleLongView");
+        boolean found = false;
+        if (setBarVisibility(bottomFrame, hideBottomBar)) found = true;
+        if (setBarVisibility(bottomHandleView, hideBottomBar)) found = true;
+        if (setBarVisibility(bottomHandleLongView, hideBottomBar)) found = true;
+        if (!found) {
+            XposedBridge.log(TAG + " hide bottom bar failed: views not found");
+            return;
+        }
+        XposedBridge.log(TAG + (hideBottomBar
+                ? " hidden freeform bottom handle bar"
+                : " restored freeform bottom handle bar"));
+    }
+
+    private static View getViewField(View target, String fieldName) {
+        try {
+            Object v = XposedHelpers.getObjectField(target, fieldName);
+            return v instanceof View ? (View) v : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 隐藏/恢复一条底部横条。隐藏时先记住原始 visibility，开关关掉后按原值还原；
+     * 旧版只置 GONE 不留原值，系统不会自己还原。
+     */
+    private static boolean setBarVisibility(View v, boolean hide) {
+        if (v == null) return false;
+        synchronized (sBottomBarOriginal) {
+            Integer orig = sBottomBarOriginal.get(v);
+            if (hide) {
+                if (orig == null) {
+                    int current = v.getVisibility();
+                    sBottomBarOriginal.put(v, current == View.GONE ? View.VISIBLE : current);
+                }
+                v.setVisibility(View.GONE);
             } else {
-                XposedBridge.log(TAG + " three-dot menu button not found");
+                v.setVisibility(orig == null ? View.VISIBLE : orig);
+                sBottomBarOriginal.remove(v);
+            }
+        }
+        return true;
+    }
+
+    private void applyThreeDotPolicy(View captionRoot) {
+        if (!hideThreeDot) {
+            restoreRemovedThreeDot(captionRoot);
+            return;
+        }
+        if (DUMP_CAPTION_TREE) {
+            dumpViewTree(captionRoot, 0);
+        }
+        View menuButton = removeThreeDotMenuButton(captionRoot);
+        if (menuButton != null) {
+            XposedBridge.log(TAG + " removed freeform three-dot menu button: " + describe(menuButton));
+        }
+    }
+
+    /** 按原位置把摘掉的三点按钮插回去（只对同一棵标题栏生效）。 */
+    private void restoreRemovedThreeDot(View captionRoot) {
+        synchronized (sRemovedThreeDot) {
+            Iterator<RemovedChild> it = sRemovedThreeDot.iterator();
+            int restored = 0;
+            while (it.hasNext()) {
+                RemovedChild rc = it.next();
+                ViewGroup parent = rc.parent.get();
+                View child = rc.child.get();
+                if (parent == null || child == null) {
+                    it.remove();
+                    continue;
+                }
+                if (parent != captionRoot) {
+                    if (child.getParent() == null) it.remove();
+                    continue;
+                }
+                if (child.getParent() != null) {
+                    it.remove();
+                    continue;
+                }
+                if (rc.index >= 0 && rc.index <= parent.getChildCount()) {
+                    parent.addView(child, rc.index);
+                } else {
+                    parent.addView(child);
+                }
+                it.remove();
+                restored++;
+            }
+            if (restored > 0) {
+                XposedBridge.log(TAG + " restored freeform three-dot menu button");
             }
         }
     }
@@ -521,6 +702,10 @@ final class DecoHook {
     }
 
     private void loadConfigFromContext(Context ctx) {
+        if (DecoStore.isAuthoritative()) {
+            logConfig("store authoritative");
+            return;
+        }
         loadFromXSharedPrefs();
         if (ctx == null) return;
         try {
@@ -627,6 +812,10 @@ final class DecoHook {
      * 500ms 节流，避免同一次手势里重复 IO。
      */
     private void refreshConfigNow() {
+        if (DecoStore.isAuthoritative()) {
+            logConfig("store authoritative");
+            return;
+        }
         long now = System.currentTimeMillis();
         if (now - sLastConfigLoad < 500L) return;
         sLastConfigLoad = now;
@@ -848,24 +1037,37 @@ final class DecoHook {
      */
     private View removeThreeDotMenuButton(View root) {
         if (root == null) return null;
+        View target = findThreeDotTarget(root);
+        if (target == null) return null;
+        if (isThreeDotTracked(target)) return null;
 
+        ViewGroup parent = target.getParent() instanceof ViewGroup
+                ? (ViewGroup) target.getParent() : null;
+        int index = parent == null ? -1 : parent.indexOfChild(target);
+        removeViewCleanly(target);
+        if (parent != null) {
+            synchronized (sRemovedThreeDot) {
+                sRemovedThreeDot.add(new RemovedChild(parent, target, index));
+            }
+        }
+        return target;
+    }
+
+    private View findThreeDotTarget(View root) {
         View simpleMode = findViewByResName(root, "flexible_simple_mode");
-        if (simpleMode != null) {
-            removeViewCleanly(simpleMode);
-            return simpleMode;
-        }
+        if (simpleMode != null) return simpleMode;
         View control = findViewByResName(root, "control_flexible");
-        if (control != null) {
-            removeViewCleanly(control);
-            return control;
-        }
+        if (control != null) return control;
+        return findMenuButtonBySemantics(root);
+    }
 
-        View semantic = findMenuButtonBySemantics(root);
-        if (semantic != null) {
-            removeViewCleanly(semantic);
-            return semantic;
+    private static boolean isThreeDotTracked(View target) {
+        synchronized (sRemovedThreeDot) {
+            for (RemovedChild rc : sRemovedThreeDot) {
+                if (rc.child.get() == target) return true;
+            }
         }
-        return null;
+        return false;
     }
 
     private View findViewByResName(View view, String simpleResName) {
